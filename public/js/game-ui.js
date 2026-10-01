@@ -1,7 +1,8 @@
 // Pantalla de partida (tiempo real): mapa, recursos, ejércitos, jugadores y panel del país seleccionado.
 
 import { WorldMap } from './map.js';
-import { $, h, toast, guardTaps } from './dom.js';
+import { $, h, toast, guardTaps, durationText, avatarEl } from './dom.js';
+import { leaderBonus, discountCost } from '/shared/leaders.js';
 import { request } from './net.js';
 import {
   RESOURCES, RESOURCE_INFO, MAX_LEVEL, countryIncome, developCost, canAfford,
@@ -222,6 +223,7 @@ export class GameView {
       },
     },
     h('span', { class: 'swatch', style: { background: p.color } }),
+    avatarEl(p),
     h('span', { class: 'chip-name' }, p.name),
     p.id !== me && game.phase === 'active' && (() => {
       const rel = relationOf(game.relations, me, p.id).state;
@@ -521,8 +523,9 @@ export class GameView {
       h('div', { class: 'recruit-list' }, available.map((t) => {
         const unit = UNITS[t];
         const blocked = unit.domain === 'sea' && !c.coastal;
+        const unitCost = discountCost(unit.cost, leaderBonus(self?.president).cost);
         const buy = (n) => {
-          const cost = Object.fromEntries(Object.entries(unit.cost).map(([r, v]) => [r, v * n]));
+          const cost = Object.fromEntries(Object.entries(unitCost).map(([r, v]) => [r, v * n]));
           const ok = !blocked && self && canAfford(self.resources, cost);
           return h('button', {
             class: 'btn btn-xs',
@@ -538,7 +541,7 @@ export class GameView {
         };
         return h('div', { class: 'recruit-row' },
           h('span', { class: 'unit-icon' }, unit.icon),
-          h('span', { class: 'recruit-name' }, unit.label, h('small', {}, blocked ? 'requiere costa' : costText(unit.cost))),
+          h('span', { class: 'recruit-name' }, unit.label, h('small', {}, blocked ? 'requiere costa' : costText(unitCost))),
           buy(1), buy(5));
       })));
   }
@@ -702,7 +705,7 @@ export class GameView {
     if (state.level >= MAX_LEVEL) return h('p', { class: 'muted small' }, 'Desarrollo al nivel máximo.');
     if (state.developing) return null;
 
-    const cost = developCost(state.level);
+    const cost = discountCost(developCost(state.level), leaderBonus(self?.president).cost);
     const reason = !self || !canAfford(self.resources, cost) ? 'No tienes recursos suficientes.' : null;
     return h('div', { class: 'develop' },
       h('button', {
@@ -886,7 +889,7 @@ export class GameView {
     const shown = limit ? Math.max(0, limit - elapsed) : elapsed;
     const secs = Math.floor(shown / 1000);
     const clockEl = $('#game-clock');
-    clockEl.textContent = `${limit ? '⏳ ' : ''}${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+    clockEl.textContent = `${limit ? '⏳ ' : ''}${durationText(shown)}`;
     clockEl.classList.toggle('urgent', Boolean(limit) && secs <= 60 && !game.result);
   }
 }

@@ -5,6 +5,8 @@ import {
   privateGameWithStandings, developCountry, recruit, moveArmy, research, researchNode, launchStrike,
   checkEnd, currentStandings, COUNTRIES,
 } from './game.js';
+import { trade, postOffer, acceptOffer, cancelOffer } from './market.js';
+import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, DEFAULT_PRESIDENT } from '../shared/leaders.js';
 import { WEAPONS } from '../shared/military.js';
 import { pairKey } from '../shared/diplomacy.js';
 import { VICTORY_REASONS } from '../shared/score.js';
@@ -18,9 +20,10 @@ export const PLAYER_COLORS = [
 // En el lobby, un jugador desconectado conserva su plaza este tiempo antes de ser expulsado.
 export const LOBBY_RECONNECT_GRACE_MS = 30_000;
 // Una sala sin nadie conectado se borra tras este tiempo (según su estado).
+// Una partida en marcha aguanta días sin nadie conectado: se puede jugar a lo largo de una semana.
 export const EMPTY_ROOM_TTL_MS = {
   lobby: 2 * 60_000,
-  playing: 10 * 60_000,
+  playing: 8 * 24 * 60 * 60_000,
   finished: 60_000,
 };
 const CHAT_HISTORY_SIZE = 50;
@@ -77,6 +80,9 @@ export class RoomManager {
         color: p.color,
         ready: p.ready,
         connected: p.connected,
+        avatar: p.avatar,
+        president: p.president,
+        country: p.country,
         isHost: p.id === room.hostId,
       })),
     };
@@ -84,7 +90,7 @@ export class RoomManager {
 
   // ---------- Entrar / salir ----------
 
-  createRoom(token, rawName) {
+  createRoom(token, rawName, avatar) {
     const name = requireName(rawName);
     this.leave(token);
 
@@ -106,13 +112,13 @@ export class RoomManager {
     };
     this.rooms.set(code, room);
 
-    const player = this.#addPlayer(room, token, name);
+    const player = this.#addPlayer(room, token, name, avatar);
     room.hostId = player.id;
     this.#system(room, `${name} ha creado la partida`);
     return { room, player };
   }
 
-  joinRoom(token, rawName, rawCode) {
+  joinRoom(token, rawName, rawCode, avatar) {
     const name = requireName(rawName);
     const code = normalizeCode(rawCode);
     const room = this.rooms.get(code);
@@ -128,7 +134,7 @@ export class RoomManager {
     }
 
     this.leave(token);
-    const player = this.#addPlayer(room, token, name);
+    const player = this.#addPlayer(room, token, name, avatar);
     this.#system(room, `${name} se ha unido`);
     return { room, player };
   }
@@ -193,6 +199,35 @@ export class RoomManager {
     for (const p of room.players.values()) if (p.id !== room.hostId) p.ready = false;
   }
 
+  /** Avatar, presidente y país elegidos en la sala. Solo cambia lo que venga en `patch`. */
+  setProfile(room, player, patch = {}) {
+    this.#requireLobby(room);
+    if ('avatar' in patch) {
+      if (!AVATARS.includes(patch.avatar)) throw new GameError('INVALID', 'Avatar no válido');
+      player.avatar = patch.avatar;
+    }
+    if ('president' in patch) {
+      if (!PRESIDENTS[patch.president]) throw new GameError('INVALID', 'Presidente no válido');
+      player.president = patch.president;
+    }
+    if ('country' in patch) {
+      const id = patch.country;
+      if (id === null) {
+        player.country = null;
+      } else {
+        if (!COUNTRIES.has(id)) throw new GameError('INVALID', 'Ese país no existe');
+        for (const other of room.players.values()) {
+          if (other.id === player.id || !other.country) continue;
+          if (other.country === id) throw new GameError('TAKEN', `${other.name} ya ha elegido ese país`);
+          if (COUNTRIES.get(other.country).neighbors.includes(id)) {
+            throw new GameError('TAKEN', `Ese país limita con el de ${other.name}; elige otro más lejos`);
+          }
+        }
+        player.country = id;
+      }
+    }
+  }
+
   setReady(room, player, ready) {
     this.#requireLobby(room);
     player.ready = Boolean(ready);
@@ -223,7 +258,9 @@ export class RoomManager {
 
     room.state = 'playing';
     room.startedAt = Date.now();
-    room.game = createGame(room.settings, [...room.players.keys()]);
+    const profiles = Object.fromEntries([...room.players.values()]
+      .map((p) => [p.id, { president: p.president, country: p.country }]));
+    room.game = createGame(room.settings, [...room.players.keys()], { profiles });
     this.#system(room, '¡La partida ha comenzado!');
     if (room.game.phase === 'picking') {
       this.#system(room, 'Elegid vuestro país en el mapa antes de que acabe el tiempo');
@@ -285,6 +322,36 @@ export class RoomManager {
       this.#system(room, `☢ ¡ALERTA! ${player.name} ha lanzado una bomba nuclear contra ${COUNTRIES.get(targetId).name}`);
     }
     return strike;
+  }
+
+  // ---------- Mercado ----------
+
+  trade(room, player, good, side, amount) {
+    this.#requirePlaying(room);
+    const { error, total } = trade(room.game, player.id, good, side, amount);
+    if (error) throw new GameError('INVALID_ACTION', error);
+    return total;
+  }
+
+  postOffer(room, player, give, want) {
+    this.#requirePlaying(room);
+    const { error, offer } = postOffer(room.game, player.id, give, want);
+    if (error) throw new GameError('INVALID_ACTION', error);
+    return offer;
+  }
+
+  /** Devuelve la oferta aceptada (para avisar a quien la publicó). */
+  acceptOffer(room, player, offerId) {
+    this.#requirePlaying(room);
+    const { error, offer } = acceptOffer(room.game, player.id, offerId);
+    if (error) throw new GameError('INVALID_ACTION', error);
+    return offer;
+  }
+
+  cancelOffer(room, player, offerId) {
+    this.#requirePlaying(room);
+    const { error } = cancelOffer(room.game, player.id, offerId);
+    if (error) throw new GameError('INVALID_ACTION', error);
   }
 
   // ---------- Mensajes privados ----------
@@ -367,12 +434,9 @@ export class RoomManager {
   tick(now = Date.now()) {
     const changed = [];
     for (const room of this.rooms.values()) {
+      // La partida sigue aunque no haya nadie conectado: el mundo no se detiene
+      // (así se puede jugar a lo largo de varios días, entrando y saliendo).
       if (room.state !== 'playing' || !room.game) continue;
-      // Si no hay nadie conectado, la partida queda en pausa.
-      if (this.#connectedIds(room).length === 0) {
-        room.game.lastTick = now;
-        continue;
-      }
       const result = tickGame(room.game, [...room.players.keys()], now);
       if (result.picked) this.#announceHomes(room);
       for (const event of result.events) this.#announceEvent(room, event);
@@ -410,6 +474,7 @@ export class RoomManager {
       playerId: player.id,
       name: player.name,
       color: player.color,
+      avatar: player.avatar,
       text,
       ts: now,
     });
@@ -448,9 +513,73 @@ export class RoomManager {
     return { changed: [...changed], deleted };
   }
 
+  // ---------- Guardado (para sobrevivir a reinicios del servidor) ----------
+
+  /** Copia serializable de las partidas en marcha. */
+  serialize() {
+    return [...this.rooms.values()]
+      .filter((room) => room.state === 'playing' && room.game)
+      .map((room) => ({
+        code: room.code,
+        state: room.state,
+        hostId: room.hostId,
+        settings: room.settings,
+        createdAt: room.createdAt,
+        startedAt: room.startedAt,
+        chat: room.chat,
+        dms: [...room.dms],
+        game: room.game,
+        players: [...room.players.values()].map((p) => ({
+          id: p.id, token: p.token, name: p.name, color: p.color, avatar: p.avatar,
+          president: p.president, country: p.country,
+        })),
+      }));
+  }
+
+  /** Recupera partidas guardadas. Todos empiezan desconectados hasta que vuelvan a entrar. */
+  restore(snapshots, now = Date.now()) {
+    let count = 0;
+    for (const snap of snapshots ?? []) {
+      if (!snap?.code || this.rooms.has(snap.code) || !snap.game) continue;
+      const room = {
+        code: snap.code,
+        state: 'playing',
+        hostId: snap.hostId,
+        settings: { ...defaultSettings(), ...snap.settings },
+        players: new Map(),
+        chat: snap.chat ?? [],
+        createdAt: snap.createdAt ?? now,
+        startedAt: snap.startedAt ?? now,
+        emptySince: now,
+        game: snap.game,
+        dms: new Map(snap.dms ?? []),
+      };
+      for (const p of snap.players ?? []) {
+        if (this.tokens.has(p.token)) continue;
+        room.players.set(p.id, {
+          ...p,
+          avatar: p.avatar ?? DEFAULT_AVATAR,
+          president: p.president ?? DEFAULT_PRESIDENT,
+          country: p.country ?? null,
+          ready: true,
+          connected: false,
+          socketId: null,
+          disconnectedAt: now,
+          lastChatAt: 0,
+        });
+        this.tokens.set(p.token, { code: room.code, playerId: p.id });
+      }
+      if (room.players.size === 0) continue;
+      if (!room.players.has(room.hostId)) room.hostId = room.players.keys().next().value;
+      this.rooms.set(room.code, room);
+      count++;
+    }
+    return count;
+  }
+
   // ---------- Internos ----------
 
-  #addPlayer(room, token, name) {
+  #addPlayer(room, token, name, avatar) {
     const usedColors = new Set([...room.players.values()].map((p) => p.color));
     const player = {
       id: randomId(),
@@ -458,6 +587,9 @@ export class RoomManager {
       name,
       color: PLAYER_COLORS.find((c) => !usedColors.has(c)) ?? PLAYER_COLORS[0],
       ready: false,
+      avatar: AVATARS.includes(avatar) ? avatar : DEFAULT_AVATAR,
+      president: DEFAULT_PRESIDENT,
+      country: null,    // país elegido en la sala (null = el que toque)
       connected: false, // pasa a true cuando se asocia el socket
       socketId: null,
       disconnectedAt: null,
@@ -512,10 +644,6 @@ export class RoomManager {
     if (room.state !== 'playing' || !room.game) {
       throw new GameError('NOT_PLAYING', 'La partida no ha empezado');
     }
-  }
-
-  #connectedIds(room) {
-    return [...room.players.values()].filter((p) => p.connected).map((p) => p.id);
   }
 
   #announceEvent(room, event) {

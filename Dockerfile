@@ -7,6 +7,8 @@ RUN npm ci --omit=dev
 COPY server ./server
 COPY shared ./shared
 COPY public ./public
+# Carpeta para guardar las partidas en marcha (si no se usa Upstash).
+RUN mkdir -p /app/data && chown node:node /app/data
 EXPOSE 3000
 USER node
 CMD ["node", "server/index.js"]

@@ -176,16 +176,16 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
       return { restored: true, ...enterRoom() };
     });
 
-    handle('room:create', ({ name }) => {
+    handle('room:create', ({ name, avatar }) => {
       leaveCurrent();
-      const { room } = rooms.createRoom(token, name);
+      const { room } = rooms.createRoom(token, name, avatar);
       console.log(`Sala ${room.code} creada (${rooms.rooms.size} activas)`);
       return enterRoom();
     });
 
-    handle('room:join', ({ name, code }) => {
+    handle('room:join', ({ name, code, avatar }) => {
       leaveCurrent();
-      rooms.joinRoom(token, name, code);
+      rooms.joinRoom(token, name, code, avatar);
       return enterRoom();
     });
 
@@ -196,6 +196,16 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
     handle('room:settings', ({ patch }) => {
       const { room, player } = current();
       rooms.updateSettings(room, player, patch);
+      broadcastRoom(room);
+    });
+
+    handle('room:profile', ({ avatar, president, country }) => {
+      const { room, player } = current();
+      const patch = {};
+      if (avatar !== undefined) patch.avatar = avatar;
+      if (president !== undefined) patch.president = president;
+      if (country !== undefined) patch.country = country;
+      rooms.setProfile(room, player, patch);
       broadcastRoom(room);
     });
 
@@ -266,6 +276,35 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
       const strike = rooms.launchStrike(room, player, weapon, countryId);
       broadcastRoom(room);
       return { arriveAt: strike.arriveAt };
+    });
+
+    handle('market:trade', ({ good, side, amount }) => {
+      const { room, player } = current();
+      const total = rooms.trade(room, player, good, side, amount);
+      broadcastRoom(room);
+      return { total };
+    });
+
+    handle('market:offer', ({ give, want }) => {
+      const { room, player } = current();
+      const offer = rooms.postOffer(room, player, give, want);
+      broadcastRoom(room);
+      return { offerId: offer.id };
+    });
+
+    handle('market:accept', ({ offerId }) => {
+      const { room, player } = current();
+      const offer = rooms.acceptOffer(room, player, offerId);
+      // Avisa a quien publicó la oferta.
+      const seller = room.players.get(offer.from);
+      if (seller?.socketId) io.to(seller.socketId).emit('market:filled', { offer, by: player.id });
+      broadcastRoom(room);
+    });
+
+    handle('market:cancel', ({ offerId }) => {
+      const { room, player } = current();
+      rooms.cancelOffer(room, player, offerId);
+      broadcastRoom(room);
     });
 
     // Mensaje privado: llega solo al destinatario (y al remitente, para su historial).

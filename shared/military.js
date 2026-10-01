@@ -102,7 +102,7 @@ export const CAPITAL_DEFENSE = 1.25;
 export const LEVEL_DEFENSE = 0.05; // +5 % de defensa por nivel de desarrollo por encima de 1
 export const AMPHIBIOUS_ATTACK = 0.75; // atacar desde el mar penaliza
 
-export const GAME_SPEEDS = { slow: 0.6, normal: 1, fast: 1.6 };
+export const GAME_SPEEDS = { marathon: 0.25, slow: 0.6, normal: 1, fast: 1.6 };
 
 export function emptyUnits() {
   return Object.fromEntries(UNIT_TYPES.map((t) => [t, 0]));

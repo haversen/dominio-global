@@ -1,6 +1,7 @@
 // Diplomacia, comercio, tecnología y clasificación: ventana modal, propuestas sobre el mapa y avisos.
 
-import { $, h, toast, guardTaps } from './dom.js';
+import { $, h, toast, guardTaps, durationText, avatarEl } from './dom.js';
+import { leaderBonus, PRESIDENTS } from '/shared/leaders.js';
 import { request, socket } from './net.js';
 import { RELATIONS, PROPOSALS, relationOf, declareWarError, proposalError } from '/shared/diplomacy.js';
 import {
@@ -9,6 +10,9 @@ import {
 import { UNITS, WEAPONS } from '/shared/military.js';
 import { RESOURCES, RESOURCE_INFO, canAfford } from '/shared/economy.js';
 import { play } from './sound.js';
+import {
+  MARKET_GOODS, MARKET_FEE, MAX_TRADE, MAX_OFFER_AMOUNT, MAX_OFFERS_PER_PLAYER, BASE_PRICES, quote,
+} from '/shared/market.js';
 
 const fmt = new Intl.NumberFormat('es-ES');
 
@@ -26,6 +30,31 @@ const nodeInfo = (id) => {
   return unit ? UNITS[unit] : WEAPONS[weapon];
 };
 
+const offerText = (side) => `${fmt.format(side.amount)} ${RESOURCE_INFO[side.resource].label.toLowerCase()}`;
+const fmtPrice = (p) => new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(p);
+
+// Mini gráfica con la evolución del precio (la línea discontinua es el precio normal).
+function sparkline(values, base) {
+  const W = 120;
+  const H = 30;
+  const NS = 'http://www.w3.org/2000/svg';
+  const min = Math.min(base, ...values) * 0.95;
+  const max = Math.max(base, ...values) * 1.05;
+  const y = (v) => H - ((v - min) / (max - min || 1)) * H;
+  const x = (i) => (values.length < 2 ? W : (i / (values.length - 1)) * W);
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('class', 'sparkline');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  const baseLine = document.createElementNS(NS, 'line');
+  Object.entries({ x1: 0, x2: W, y1: y(base), y2: y(base), class: 'spark-base' }).forEach(([k, v]) => baseLine.setAttribute(k, v));
+  const line = document.createElementNS(NS, 'polyline');
+  line.setAttribute('points', values.map((v, i) => `${x(i)},${y(v)}`).join(' '));
+  line.setAttribute('class', 'spark-line');
+  svg.append(baseLine, line);
+  return svg;
+}
+
 const resourcesText = (obj) => Object.entries(obj ?? {})
   .map(([r, v]) => `${fmt.format(v)} ${RESOURCE_INFO[r].label.toLowerCase()}`).join(', ') || 'nada';
 
@@ -42,9 +71,13 @@ export class DiplomacyView {
     this.dms = [];       // mensajes privados (enviados y recibidos)
     this.unread = {};    // jugador -> mensajes sin leer
     this.dmWith = null;  // conversación abierta
+    this.seenOffers = null;
+    // Lo que se está rellenando en el mercado (sobrevive a los redibujados).
+    this.market = { good: 'food', amount: 50, give: { resource: 'oil', amount: 50 }, want: { resource: 'money', amount: 100 } };
 
     $('#btn-diplomacy').addEventListener('click', () => this.open('diplomacy'));
     $('#btn-tech').addEventListener('click', () => this.open('tech'));
+    $('#btn-market').addEventListener('click', () => this.open('market'));
     $('#btn-ranking').addEventListener('click', () => this.open('ranking'));
     $('#modal-close').addEventListener('click', () => this.close());
     $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') this.close(); });
@@ -58,6 +91,12 @@ export class DiplomacyView {
     Object.defineProperty(this, 'pressed', { get: () => guards.some((g) => g.isPressed()) });
 
     socket.on('dm:message', (msg) => this.#onDirect(msg));
+
+    socket.on('market:filled', ({ offer, by }) => {
+      const name = this.getCtx()?.players.get(by)?.name ?? 'Alguien';
+      toast(`📈 ${name} ha aceptado tu oferta: recibes ${fmt.format(offer.want.amount)} ${RESOURCE_INFO[offer.want.resource].label.toLowerCase()}`, 'success', 5000);
+      play('notify');
+    });
 
     socket.on('diplo:answered', ({ type, accepted, by }) => {
       const name = this.getCtx()?.players.get(by)?.name ?? 'El otro jugador';
@@ -87,6 +126,7 @@ export class DiplomacyView {
     this.seenProposals = null;
     this.lastTech = null;
     this.lastUnlocked = null;
+    this.seenOffers = null;
     this.dms = [];
     this.unread = {};
   }
@@ -105,7 +145,9 @@ export class DiplomacyView {
     if (this.pressed && !force) return;
     this.#renderStack(ctx);
     // Ni el comercio ni las conversaciones se redibujan solos, para no borrar lo que se está escribiendo.
-    if (this.tab && ((!this.tradeWith && !this.dmWith) || force)) this.#renderModal(ctx);
+    // En el mercado tampoco mientras se escribe una cantidad (en el móvil se cerraría el teclado).
+    const typing = document.activeElement?.matches?.('#modal input, #modal select');
+    if (this.tab && ((!this.tradeWith && !this.dmWith && !typing) || force)) this.#renderModal(ctx);
   }
 
   // ---------- Avisos ----------
@@ -142,9 +184,23 @@ export class DiplomacyView {
       }
     }
     this.lastUnlocked = [...(self.unlocked ?? [])];
+
+    const offers = (this.getCtx()?.game.market?.offers ?? []).filter((o) => o.from !== me);
+    if (this.seenOffers) {
+      for (const o of offers) {
+        if (this.seenOffers.has(o.id)) continue;
+        toast(`📈 ${players.get(o.from)?.name ?? 'Alguien'} ofrece ${offerText(o.give)} por ${offerText(o.want)}`, 'info', 4500);
+      }
+    }
+    this.seenOffers = new Set(offers.map((o) => o.id));
   }
 
-  #renderButtons({ self, me }) {
+  #renderButtons({ self, me, game }) {
+    const offers = (game.market?.offers ?? []).filter((o) => o.from !== me).length;
+    const marketCount = $('#market-count');
+    marketCount.textContent = offers;
+    marketCount.classList.toggle('hidden', offers === 0);
+
     const unread = Object.values(this.unread).reduce((a, b) => a + b, 0);
     const incoming = self.proposals.filter((p) => p.to === me).length + unread;
     const count = $('#diplo-count');
@@ -172,6 +228,7 @@ export class DiplomacyView {
     return h('div', { class: 'proposal' },
       h('div', { class: 'proposal-head' },
         h('span', { class: 'swatch', style: { background: from?.color } }),
+        avatarEl(from),
         h('strong', {}, from?.name ?? '?'),
         h('span', { class: 'muted' }, PROPOSALS[p.type].verb),
         h('b', { class: 'proposal-timer' }, clock(p.expiresAt - now))),
@@ -192,6 +249,7 @@ export class DiplomacyView {
   #renderModal(ctx) {
     const body = $('#modal-body');
     if (this.tab === 'tech') return fill(body, this.#techView(ctx));
+    if (this.tab === 'market') return fill(body, this.#marketView(ctx));
     if (this.tab === 'ranking') return fill(body, rankingView(ctx, this.serverNow()));
     if (this.tradeWith) return fill(body, this.#tradeForm(ctx));
     if (this.dmWith) return fill(body, this.#dmView(ctx));
@@ -221,7 +279,9 @@ export class DiplomacyView {
           return h('div', { class: `relation-row rel-${rel.state}${out ? ' out' : ''}` },
             h('div', { class: 'relation-who' },
               h('span', { class: 'swatch', style: { background: p.color } }),
+              avatarEl(p),
               h('strong', {}, p.name),
+              presidentTag(game, p.id),
               h('span', { class: 'muted small' }, out ? 'eliminado' : `${counts[p.id] ?? 0} países${p.connected ? '' : ' · desconectado'}`)),
             h('span', { class: `relation-badge rel-${rel.state}` },
               `${RELATIONS[rel.state].icon} ${RELATIONS[rel.state].label}`,
@@ -372,10 +432,183 @@ export class DiplomacyView {
       h('div', { class: 'dm-head' },
         h('button', { class: 'btn btn-ghost btn-xs', onClick: () => { this.dmWith = null; this.render(true); } }, '← Volver'),
         h('span', { class: 'swatch', style: { background: partner?.color } }),
+        avatarEl(partner),
         h('strong', {}, `Conversación privada con ${partner?.name ?? '?'}`)),
       list,
       h('form', { class: 'chat-form', onSubmit: send }, input, h('button', { class: 'btn btn-sm', type: 'submit' }, 'Enviar')),
     ];
+  }
+
+  // ---------- Mercado ----------
+
+  #marketView(ctx) {
+    const { game, self } = ctx;
+    const market = game.market;
+    if (!market) return h('p', { class: 'muted' }, 'El mercado abre cuando empieza la partida.');
+    const active = game.phase === 'active' && !game.eliminated?.[ctx.me];
+    return [
+      h('section', { class: 'modal-section' },
+        h('h4', { class: 'panel-sub' }, 'Bolsa de materiales'),
+        h('p', { class: 'muted small' }, 'Vende lo que te sobra o compra lo que te falta a cambio de dinero. Si muchos compran, el precio sube; si muchos venden, baja. Después vuelve poco a poco a su valor normal.'),
+        h('div', { class: 'market-goods' }, MARKET_GOODS.map((g) => this.#goodCard(g, market, self))),
+        active && this.#tradeBox(market, self)),
+      h('section', { class: 'modal-section' },
+        h('h4', { class: 'panel-sub' }, 'Ofertas entre jugadores'),
+        this.#offerList(ctx, active),
+        active && this.#offerForm(ctx)),
+    ];
+  }
+
+  #goodCard(g, market, self) {
+    const price = market.prices[g];
+    const history = market.history[g] ?? [price];
+    const first = history[0];
+    const trend = price > first * 1.02 ? 'up' : price < first * 0.98 ? 'down' : 'flat';
+    const selected = this.market.good === g;
+    return h('button', {
+      class: `market-good res-${g}${selected ? ' active' : ''}`,
+      onClick: () => { this.market.good = g; this.render(true); },
+    },
+    h('span', { class: 'market-good-name' }, h('i'), RESOURCE_INFO[g].label),
+    h('strong', { class: `market-price trend-${trend}` },
+      `${fmtPrice(price)} 💰`, h('small', {}, trend === 'up' ? ' ▲' : trend === 'down' ? ' ▼' : ' ●')),
+    sparkline(history, BASE_PRICES[g]),
+    h('small', { class: 'muted' }, `Tienes ${fmt.format(self.resources[g])}`));
+  }
+
+  #tradeBox(market, self) {
+    const g = this.market.good;
+    const fee = leaderBonus(self.president).noMarketFee ? 0 : MARKET_FEE;
+    const amount = this.market.amount;
+    const buy = quote(g, market.prices[g], 'buy', amount, fee);
+    const sell = quote(g, market.prices[g], 'sell', amount, fee);
+    const label = RESOURCE_INFO[g].label.toLowerCase();
+
+    const input = h('input', {
+      type: 'number', min: '1', max: String(MAX_TRADE), step: '1', inputmode: 'numeric', value: String(amount),
+      onChange: () => {
+        this.market.amount = Math.min(MAX_TRADE, Math.max(1, Math.floor(Number(input.value) || 1)));
+        input.blur();
+        this.render(true);
+      },
+    });
+    const preset = (n) => h('button', {
+      class: `btn btn-xs${amount === n ? ' btn-primary' : ''}`,
+      onClick: () => { this.market.amount = n; this.render(true); },
+    }, String(n));
+    const go = (side) => async (e) => {
+      e.currentTarget.disabled = true;
+      const res = await request('market:trade', { good: g, side, amount });
+      if (!res.ok) return toast(res.error, 'error');
+      toast(side === 'buy'
+        ? `Has comprado ${fmt.format(amount)} ${label} por ${fmt.format(res.total)} de dinero`
+        : `Has vendido ${fmt.format(amount)} ${label} por ${fmt.format(res.total)} de dinero`, 'success');
+      play('recruit');
+    };
+
+    return h('div', { class: 'trade-box' },
+      h('div', { class: 'trade-amount' },
+        h('span', {}, `Cantidad de ${label}:`),
+        h('div', { class: 'presets' }, [10, 50, 100, 250].map(preset)),
+        input),
+      h('div', { class: 'trade-buttons' },
+        h('button', {
+          class: 'btn btn-primary',
+          disabled: self.resources.money < buy.total,
+          onClick: go('buy'),
+        }, `Comprar ${fmt.format(amount)}`, h('small', {}, `pagas ${fmt.format(buy.total)} 💰`)),
+        h('button', {
+          class: 'btn',
+          disabled: self.resources[g] < amount,
+          onClick: go('sell'),
+        }, `Vender ${fmt.format(amount)}`, h('small', {}, `recibes ${fmt.format(sell.total)} 💰`))),
+      h('p', { class: 'muted small' }, fee
+        ? `La bolsa cobra una comisión del ${Math.round(fee * 100)} %. Con el presidente Mercader no hay comisión.`
+        : '🤵 Tu presidente Mercader opera sin comisión.'));
+  }
+
+  #offerList({ game, players, me, self }, active) {
+    const now = this.serverNow();
+    const offers = game.market.offers;
+    if (!offers.length) return h('p', { class: 'muted small' }, 'No hay ofertas publicadas. ¡Publica la primera!');
+    return h('div', { class: 'offers' }, offers.map((o) => {
+      const p = players.get(o.from);
+      const mine = o.from === me;
+      const atWar = !mine && relationOf(game.relations, me, o.from).state === 'war';
+      let error = null;
+      if (atWar) error = 'Estáis en guerra: no podéis comerciar';
+      else if (!mine && self.resources[o.want.resource] < o.want.amount) error = 'No tienes lo que pide';
+      return h('div', { class: `offer${mine ? ' mine' : ''}` },
+        h('div', { class: 'offer-who' },
+          h('span', { class: 'swatch', style: { background: p?.color } }), avatarEl(p),
+          h('strong', {}, mine ? 'Tu oferta' : p?.name ?? '?'),
+          h('small', { class: 'muted' }, clock(o.expiresAt - now))),
+        h('div', { class: 'offer-deal' },
+          h('span', { class: `offer-res res-${o.give.resource}` }, h('i'), `Da ${offerText(o.give)}`),
+          h('span', { class: 'offer-arrow' }, '⇄'),
+          h('span', { class: `offer-res res-${o.want.resource}` }, h('i'), `Pide ${offerText(o.want)}`)),
+        active && (mine
+          ? h('button', {
+              class: 'btn btn-ghost btn-xs',
+              onClick: async () => {
+                const res = await request('market:cancel', { offerId: o.id });
+                if (!res.ok) toast(res.error, 'error');
+                else toast('Oferta retirada: se te devuelve lo reservado');
+              },
+            }, 'Retirar')
+          : h('button', {
+              class: 'btn btn-primary btn-xs',
+              disabled: Boolean(error),
+              title: error ?? '',
+              onClick: async (e) => {
+                e.currentTarget.disabled = true;
+                const res = await request('market:accept', { offerId: o.id });
+                if (!res.ok) return toast(res.error, 'error');
+                toast(`Trato hecho: recibes ${offerText(o.give)}`, 'success');
+                play('notify');
+              },
+            }, error ? '✕' : 'Aceptar')));
+    }));
+  }
+
+  #offerForm({ self, game, me }) {
+    const form = this.market;
+    const mineCount = game.market.offers.filter((o) => o.from === me).length;
+    const side = (key, title) => {
+      const select = h('select', {
+        onChange: () => { form[key].resource = select.value; select.blur(); this.render(true); },
+      }, RESOURCES.map((r) => h('option', { value: r }, RESOURCE_INFO[r].label)));
+      select.value = form[key].resource;
+      const input = h('input', {
+        type: 'number', min: '1', max: String(MAX_OFFER_AMOUNT), step: '1', inputmode: 'numeric', value: String(form[key].amount),
+        onChange: () => {
+          form[key].amount = Math.min(MAX_OFFER_AMOUNT, Math.max(1, Math.floor(Number(input.value) || 1)));
+          input.blur();
+          this.render(true);
+        },
+      });
+      return h('label', { class: 'offer-side' }, h('span', { class: 'muted small' }, title), select, input);
+    };
+    let error = null;
+    if (form.give.resource === form.want.resource) error = 'Ofrece y pide materiales distintos';
+    else if (self.resources[form.give.resource] < form.give.amount) error = 'No tienes tanto para ofrecer';
+    else if (mineCount >= MAX_OFFERS_PER_PLAYER) error = `Máximo ${MAX_OFFERS_PER_PLAYER} ofertas a la vez`;
+
+    return h('div', { class: 'offer-form' },
+      h('h4', { class: 'panel-sub' }, 'Publicar una oferta'),
+      h('div', { class: 'offer-sides' }, side('give', 'Doy'), h('span', { class: 'offer-arrow' }, '⇄'), side('want', 'A cambio de')),
+      h('button', {
+        class: 'btn btn-primary btn-block',
+        disabled: Boolean(error),
+        title: error ?? '',
+        onClick: async (e) => {
+          e.currentTarget.disabled = true;
+          const res = await request('market:offer', { give: { ...form.give }, want: { ...form.want } });
+          if (!res.ok) return toast(res.error, 'error');
+          toast('Oferta publicada: todos los jugadores la verán', 'success');
+        },
+      }, error ?? 'Publicar oferta'),
+      h('p', { class: 'muted small' }, 'Lo que ofreces queda reservado hasta que alguien acepte o retires la oferta. Las ofertas caducan a los 10 minutos y se te devuelve todo.'));
   }
 
   // ---------- Tecnología ----------
@@ -417,7 +650,7 @@ export class DiplomacyView {
     if (done) {
       action = h('span', { class: 'tree-done' }, node.free ? '✓ De serie' : '✓ Investigado');
     } else if (researching) {
-      const total = node.ms / game.speed;
+      const total = (node.ms * leaderBonus(self.president).researchMs) / game.speed;
       const left = self.research.readyAt - now;
       action = h('div', { class: 'progress' },
         h('div', { class: 'progress-bar', style: { width: `${Math.min(100, (1 - left / total) * 100)}%` } }),
@@ -432,7 +665,7 @@ export class DiplomacyView {
           if (!res.ok) toast(res.error, 'error');
           else toast(`Investigando: ${info.label}`);
         },
-      }, blockedBy ? '🔒 Bloqueado' : `Investigar · ${clock(node.ms / game.speed)}`);
+      }, blockedBy ? '🔒 Bloqueado' : `Investigar · ${clock((node.ms * leaderBonus(self.president).researchMs) / game.speed)}`);
     }
 
     return h('div', {
@@ -460,7 +693,7 @@ export class DiplomacyView {
 
       let progress = null;
       if (researching) {
-        const total = techMs(r.toLevel) / game.speed;
+        const total = (techMs(r.toLevel) * leaderBonus(self.president).researchMs) / game.speed;
         const left = r.readyAt - now;
         progress = h('div', { class: 'progress' },
           h('div', { class: 'progress-bar', style: { width: `${Math.min(100, (1 - left / total) * 100)}%` } }),
@@ -487,6 +720,13 @@ export class DiplomacyView {
   }
 }
 
+// Presidente de un jugador en la partida (con su ventaja en el título).
+function presidentTag(game, playerId) {
+  const pres = PRESIDENTS[game.presidents?.[playerId]];
+  if (!pres) return null;
+  return h('span', { class: 'president-tag', title: `${pres.name} — ${pres.perk}` }, `${pres.portrait} ${pres.title}`);
+}
+
 // ---------- Clasificación ----------
 
 /** Objetivos de victoria y tabla de puntuaciones (también se usa en la pantalla final). */
@@ -499,7 +739,7 @@ export function rankingTable(standings, players, me) {
       const p = players.get(r.id);
       return h('tr', { class: `${r.id === me ? 'me' : ''}${r.eliminated ? ' out' : ''}` },
         h('td', {}, r.eliminated ? '☠' : String(i + 1)),
-        h('td', {}, h('span', { class: 'swatch', style: { background: p?.color } }), p?.name ?? 'Jugador retirado', r.id === me && h('em', {}, ' (tú)')),
+        h('td', {}, h('span', { class: 'swatch', style: { background: p?.color } }), p && avatarEl(p), p?.name ?? 'Jugador retirado', r.id === me && h('em', {}, ' (tú)')),
         h('td', {}, String(r.countries)),
         h('td', {}, `${fmt.format(r.areaPct)} %`),
         h('td', {}, String(r.units)),
@@ -533,7 +773,7 @@ function rankingView({ game, players, me, self }, now) {
   if (timeLimitMs && game.startedAt) {
     goals.push(h('div', { class: 'goal' },
       h('strong', {}, '⏱ Límite de tiempo: gana la mayor puntuación'),
-      h('span', { class: 'muted' }, `Tiempo restante: ${clock(game.startedAt + timeLimitMs - now)}`)));
+      h('span', { class: 'muted' }, `Tiempo restante: ${durationText(game.startedAt + timeLimitMs - now)}`)));
   }
 
   return [

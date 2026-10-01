@@ -15,6 +15,8 @@ import { relationOf, tickDiplomacy, forgetPlayer } from './diplomacy.js';
 import { createAIState, tickAI } from './ai.js';
 import { standings, checkVictory } from './victory.js';
 import { encodeCountries } from '../shared/wire.js';
+import { DEFAULT_PRESIDENT, PRESIDENTS, leaderBonus, discountCost } from '../shared/leaders.js';
+import { createMarket, tickMarket, forgetOffers, publicMarket } from './market.js';
 
 // Mapa del mundo generado por scripts/build-world.js.
 export const WORLD = JSON.parse(readFileSync(new URL('../shared/world.json', import.meta.url), 'utf8'));
@@ -38,8 +40,11 @@ const EVENT_HISTORY = 30;
  *   strikes:   [{ id, owner, weapon, from, to, departAt, arriveAt }]  bombas en vuelo
  *   relations: { 'a|b': { state, until } }  diplomacia entre jugadores (por defecto, paz)
  *   proposals: [{ id, type, from, to, expiresAt, trade? }]  propuestas pendientes (privadas)
+ *   market:    { prices, history, offers, nextSample }  bolsa y ofertas entre jugadores
+ *
+ * profiles: { [playerId]: { president, country } } elegidos en la sala antes de empezar.
  */
-export function createGame(settings, playerIds, { now = Date.now(), rng = Math.random } = {}) {
+export function createGame(settings, playerIds, { now = Date.now(), rng = Math.random, profiles = {} } = {}) {
   const game = {
     phase: 'picking',
     speed: GAME_SPEEDS[settings.gameSpeed] ?? 1,
@@ -60,6 +65,7 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
       unlocked: startingUnlocks(), // nodos del árbol tecnológico investigados
       research: null,              // { tech, toLevel, readyAt } o { node, readyAt }
       cooldowns: {},               // arma -> momento en que se puede volver a lanzar
+      president: PRESIDENTS[profiles[id]?.president] ? profiles[id].president : DEFAULT_PRESIDENT,
       stats: { battlesWon: 0, battlesLost: 0, conquests: 0, unitsLost: 0 },
     }])),
     startPlayers: playerIds.length,
@@ -80,8 +86,15 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
   };
 
   game.ai = createAIState(settings.aiDifficulty, game.countries, now);
+  game.market = createMarket(now);
 
-  if (settings.countryAssignment === 'choose') {
+  // Los países elegidos en la sala se respetan (si siguen siendo válidos).
+  for (const id of playerIds) {
+    const wanted = profiles[id]?.country;
+    if (wanted && COUNTRIES.has(wanted) && !isBlockedFor(game, id, wanted)) game.picks[id] = wanted;
+  }
+
+  if (settings.countryAssignment === 'choose' && !allPicked(game, playerIds)) {
     game.pickDeadline = now + PICK_DURATION_MS;
   } else {
     finishPicking(game, playerIds, rng, now);
@@ -157,8 +170,10 @@ function economyTotals(game) {
   return totals;
 }
 
+const bonusOf = (game, playerId) => leaderBonus(game.players[playerId]?.president);
+
 function applyIncomeTech(game, playerId, raw) {
-  const mult = techBonus.income(game.players[playerId]?.tech);
+  const mult = techBonus.income(game.players[playerId]?.tech) * bonusOf(game, playerId).income;
   const total = emptyResources();
   for (const r of RESOURCES) total[r] = (raw?.[r] ?? 0) * mult;
   return total;
@@ -205,7 +220,7 @@ export function recruit(game, playerId, countryId, type, count, now = Date.now()
   if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH) return `Puedes reclutar de 1 a ${MAX_BATCH} unidades`;
   if (unit.domain === 'sea' && !COUNTRIES.get(countryId).coastal) return 'Los barcos solo se construyen en países con costa';
 
-  const cost = scaleCost(unit.cost, count);
+  const cost = scaleCost(discountCost(unit.cost, bonusOf(game, playerId).cost), count);
   const player = game.players[playerId];
   if (!canAfford(player.resources, cost)) return 'No tienes recursos suficientes';
 
@@ -223,7 +238,7 @@ export function developCountry(game, playerId, countryId, now = Date.now()) {
   if (country.developing) return 'Ese país ya se está desarrollando';
 
   const player = game.players[playerId];
-  const cost = developCost(country.level);
+  const cost = discountCost(developCost(country.level), bonusOf(game, playerId).cost);
   if (!canAfford(player.resources, cost)) return 'No tienes recursos suficientes';
 
   addResources(player.resources, cost, -1);
@@ -246,7 +261,8 @@ export function research(game, playerId, tech, now = Date.now()) {
   if (!canAfford(player.resources, cost)) return 'No tienes recursos suficientes';
 
   addResources(player.resources, cost, -1);
-  player.research = { tech, toLevel, readyAt: now + Math.round(techMs(toLevel) / game.speed) };
+  const ms = techMs(toLevel) * bonusOf(game, playerId).researchMs;
+  player.research = { tech, toLevel, readyAt: now + Math.round(ms / game.speed) };
   return null;
 }
 
@@ -262,7 +278,8 @@ export function researchNode(game, playerId, nodeId, now = Date.now()) {
   if (!canAfford(player.resources, node.cost)) return 'No tienes recursos suficientes';
 
   addResources(player.resources, node.cost, -1);
-  player.research = { node: nodeId, readyAt: now + Math.round(node.ms / game.speed) };
+  const ms = node.ms * bonusOf(game, playerId).researchMs;
+  player.research = { node: nodeId, readyAt: now + Math.round(ms / game.speed) };
   return null;
 }
 
@@ -486,6 +503,7 @@ export function tickGame(game, playerIds, now = Date.now(), rng = Math.random) {
   }
 
   if (tickAI(game, COUNTRIES, now)) changed = true;
+  if (tickMarket(game, now)) changed = true;
 
   const ended = checkEnd(game, now);
   if (ended) changed = true;
@@ -507,6 +525,7 @@ export function checkEnd(game, now = Date.now()) {
   game.armies = [];
   game.strikes = [];
   game.proposals = [];
+  if (game.market) game.market.offers = [];
   game.result = { ...outcome, endedAt: now, duration: now - game.startedAt, standings: table };
   return game.result;
 }
@@ -553,8 +572,8 @@ function arrive(game, army, now, rng) {
     amphibious: COUNTRIES.get(army.from).sea.includes(army.to),
     attackerSupply: supplyOf(game, army.owner),
     defenderSupply: defender ? supplyOf(game, defender) : {},
-    attackBonus: techBonus.attack(game.players[army.owner]?.tech),
-    defenseBonus: defender ? techBonus.defense(game.players[defender]?.tech) : 1,
+    attackBonus: techBonus.attack(game.players[army.owner]?.tech) * bonusOf(game, army.owner).attack,
+    defenseBonus: defender ? techBonus.defense(game.players[defender]?.tech) * bonusOf(game, defender).defense : 1,
   }, rng);
 
   const event = {
@@ -613,6 +632,7 @@ function checkEliminations(game, now) {
       player.eliminated = true;
       player.research = null;
       forgetPlayer(game, pid);
+      forgetOffers(game, pid);
       const event = { id: ++game.seq, ts: now, type: 'eliminated', player: pid };
       pushEvent(game, event);
       events.push(event);
@@ -648,6 +668,7 @@ export function releasePlayer(game, playerId) {
   game.armies = game.armies.filter((a) => a.owner !== playerId);
   game.strikes = game.strikes.filter((s) => s.owner !== playerId);
   forgetPlayer(game, playerId);
+  forgetOffers(game, playerId);
   delete game.homes[playerId];
   delete game.picks[playerId];
   delete game.players[playerId];
@@ -668,6 +689,8 @@ export function publicGame(game) {
     strikes: game.strikes,
     events: game.events,
     relations: game.relations,
+    market: publicMarket(game.market),
+    presidents: Object.fromEntries(Object.entries(game.players).map(([id, p]) => [id, p.president])),
     victory: game.victory,
     result: game.result,
     eliminated: Object.fromEntries(Object.entries(game.players).map(([id, p]) => [id, p.eliminated])),
@@ -687,6 +710,7 @@ export function privateGame(game, playerId) {
     upkeep: round(upkeepFor(game, playerId), 1),
     supply: supplyOf(game, playerId),
     eliminated: player.eliminated,
+    president: player.president,
     tech: player.tech,
     unlocked: player.unlocked,
     cooldowns: player.cooldowns,

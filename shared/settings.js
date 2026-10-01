@@ -11,8 +11,8 @@ export const SETTINGS_SCHEMA = {
   gameSpeed: {
     label: 'Velocidad de juego',
     type: 'select',
-    options: ['slow', 'normal', 'fast'],
-    labels: { slow: 'Lenta', normal: 'Normal', fast: 'Rápida' },
+    options: ['marathon', 'slow', 'normal', 'fast'],
+    labels: { marathon: 'Muy lenta (partidas de días)', slow: 'Lenta', normal: 'Normal', fast: 'Rápida' },
     default: 'normal',
   },
   aiDifficulty: {
@@ -23,10 +23,10 @@ export const SETTINGS_SCHEMA = {
     default: 'normal',
   },
   countryAssignment: {
-    label: 'Asignación de países',
+    label: 'Quien no elija país en la sala',
     type: 'select',
     options: ['random', 'choose'],
-    labels: { random: 'Aleatoria', choose: 'Cada jugador elige' },
+    labels: { random: 'Recibe uno al azar', choose: 'Lo elige en el mapa' },
     default: 'random',
   },
   winDomination: {
@@ -55,8 +55,9 @@ export const SETTINGS_SCHEMA = {
   timeLimitMinutes: {
     label: 'Duración de la partida',
     type: 'select',
-    options: [15, 30, 45, 60, 90, 120],
+    options: [15, 30, 45, 60, 90, 120, 1440, 4320, 10080],
     suffix: ' min',
+    labels: { 1440: '1 día', 4320: '3 días', 10080: '1 semana' },
     default: 60,
     dependsOn: 'winTimeLimit',
   },

@@ -4,6 +4,8 @@
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MAX_ZOOM = 14;
 const CLICK_TOLERANCE_PX = 5;
+// Un dedo nunca se queda quieto del todo: en pantallas táctiles se tolera más movimiento en un toque.
+const TAP_TOLERANCE_PX = 14;
 const LABEL_PX = 11;
 const LABEL_CHAR_PX = LABEL_PX * 0.58; // ancho aproximado de un carácter
 const NEUTRAL_SHADES = ['#2c352b', '#323c30', '#283027', '#363f33'];
@@ -429,6 +431,7 @@ export class WorldMap {
           startX: e.clientX,
           startY: e.clientY,
           moved: false,
+          tolerance: e.pointerType === 'mouse' ? CLICK_TOLERANCE_PX : TAP_TOLERANCE_PX,
           target: e.target.closest?.('.country')?.dataset.id ?? null,
           anchor: this.#toMap(e.clientX, e.clientY),
         };
@@ -450,7 +453,7 @@ export class WorldMap {
         return;
       }
       if (!this.drag) return;
-      if (!this.drag.moved && Math.hypot(e.clientX - this.drag.startX, e.clientY - this.drag.startY) > CLICK_TOLERANCE_PX) {
+      if (!this.drag.moved && Math.hypot(e.clientX - this.drag.startX, e.clientY - this.drag.startY) > this.drag.tolerance) {
         this.drag.moved = true;
         el.classList.add('dragging');
       }

@@ -23,7 +23,7 @@ Túnel rápido: `npx cloudflared tunnel --url http://localhost:3000` (o `ngrok h
 
 ### Probar en local con varios jugadores
 
-Cada **pestaña** del navegador es un jugador distinto. Abre varias pestañas (o ventanas de incógnito) en http://localhost:3000.
+Cada navegador recuerda a su jugador (aunque se cierre), así que para probar con varios jugadores en un mismo ordenador usa **ventanas de incógnito** o navegadores distintos.
 
 ## Publicarlo en Internet (Render, gratis)
 
@@ -37,7 +37,20 @@ El repositorio incluye `render.yaml`, así que Render lo configura solo.
 2. En https://render.com crea una cuenta, pulsa **New → Blueprint** y elige tu repositorio. Render leerá `render.yaml`, instalará y arrancará el servidor.
 3. En unos minutos tendrás una dirección del tipo `https://dominio-global.onrender.com`. Compártela con tus amigos.
 
-Notas del plan gratuito: el servidor «se duerme» tras 15 minutos sin visitas y tarda ~1 minuto en despertar; al dormirse o redesplegar se pierden las partidas en curso (viven en memoria).
+Notas del plan gratuito: el servidor «se duerme» tras 15 minutos sin visitas y tarda ~1 minuto en despertar.
+
+### Partidas largas (de días o una semana)
+
+Las partidas en marcha se guardan cada minuto y al apagarse el servidor, y se recuperan al arrancar (`server/storage.js`). Mientras tanto el mundo sigue: si nadie está conectado, los ingresos y los ejércitos siguen avanzando, y una partida sin nadie dura hasta 8 días. Cada dispositivo recuerda a su jugador, así que basta con volver a abrir la página para seguir.
+
+- **En tu ordenador** se guardan en `data/rooms.json` (o en la carpeta `DATA_DIR`).
+- **En Render** el disco se borra al dormirse o al actualizar, así que hace falta una base de datos gratuita de [Upstash](https://upstash.com):
+  1. Crea una cuenta en https://console.upstash.com y pulsa **Create Database** (tipo Redis, plan Free, la región más cercana).
+  2. En la base de datos, en la sección **REST API**, copia `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN`.
+  3. En Render, abre el servicio → **Environment** → **Add Environment Variable** y añade las dos con sus valores. Render se reinicia solo.
+  4. En los registros (*Logs*) de Render verás `Guardado en Upstash Redis`.
+
+Para partidas de varios días conviene la velocidad **Muy lenta** y un límite de tiempo de **1 día**, **3 días** o **1 semana**.
 
 **Otras opciones**: el `Dockerfile` sirve para Fly.io, Railway o cualquier VPS (`docker build -t dominio-global . && docker run -p 3000:3000 dominio-global`).
 
@@ -107,10 +120,28 @@ Doce tipos de unidad en cuatro ramas. El nivel I viene de serie; los niveles II 
 - Entre **aliados**, enviar tropas a un país del aliado lo refuerza (las tropas pasan a defenderlo). Romper una alianza es declarar la guerra y se anuncia como traición.
 - Si se firma la paz mientras un ejército está en marcha, al llegar da media vuelta.
 - **Comercio**: se ofrecen recursos a cambio de otros (o se regalan). El servidor comprueba que ambos los tengan en el momento de aceptar.
+- **Mercado** (`shared/market.js`, `server/market.js`):
+  - *Bolsa*: compra y venta de alimentos, petróleo e industria a cambio de dinero. El precio sube al comprar y baja al vender (0,3 % por unidad), vuelve poco a poco a su valor normal y se guarda su historial para la gráfica. Comisión del 10 %.
+  - *Ofertas entre jugadores*: «doy X a cambio de Y», visibles para todos; lo ofrecido queda reservado hasta que alguien acepta, se retira o caduca (10 min). Máximo 3 por jugador; no se comercia con quien estás en guerra.
 - **Mensajes privados**: desde Diplomacia se puede hablar en privado con cada jugador; solo lo ven remitente y destinatario.
 - **Tecnología** (`shared/tech.js`), una investigación a la vez:
   - *Árbol de investigación* (estilo War Thunder): ramas de infantería, blindados, aviación, marina y bombas, con niveles I-III que exigen el anterior.
   - *Doctrinas*: Industrialización (+10 % producción), Doctrina militar (+10 % ataque), Fortificaciones (+10 % defensa) y Logística (+15 % velocidad, −10 % mantenimiento), con tres niveles cada una.
+
+### Antes de empezar: avatar, presidente y país
+
+En la sala, cada jugador elige su **avatar**, su **país inicial** (no puede ser vecino del de otro jugador) y un **presidente** con una ventaja para toda la partida (`shared/leaders.js`):
+
+| Presidente | Ventaja |
+|------------|---------|
+| La Economista | +15 % de ingresos |
+| El General | +12 % de ataque |
+| La Defensora | +15 % de defensa |
+| La Científica | Investigación un 30 % más rápida |
+| El Mercader | Bolsa sin comisión |
+| La Industrial | Tropas y desarrollo un 15 % más baratos |
+
+Quien no elija país recibe uno al azar o lo elige en el mapa, según los ajustes.
 
 ### Bombas
 
@@ -147,7 +178,9 @@ Cuando un ejército ajeno se dirige a uno de tus países, suena una alarma y apa
 
 ```
 server/
-  index.js    Arranque: escucha en el puerto y muestra las URLs
+  index.js    Arranque: recupera partidas guardadas, escucha y guarda cada minuto
+  storage.js  Guardado de partidas (archivo local o Upstash Redis)
+  market.js   Bolsa y ofertas entre jugadores
   app.js      Express + Socket.IO: traduce eventos de red a acciones
   rooms.js    RoomManager: salas, jugadores, lobby, reconexión, limpieza
   game.js     Estado de la partida: países, asignación, economía, ejércitos, batallas
@@ -161,6 +194,8 @@ shared/
   military.js Unidades, terreno, movimiento y resolución de batallas
   diplomacy.js Relaciones y propuestas entre jugadores
   tech.js     Árbol tecnológico
+  leaders.js  Avatares y presidentes
+  market.js   Precios y reglas del mercado
   score.js    Puntuación y textos de victoria
   wire.js     Formato compacto de los países para la red
   world.json  Mapa mundial generado (países, contornos, vecinos)
@@ -183,8 +218,9 @@ Todas las acciones del cliente usan *acknowledgements*: el servidor responde `{ 
 | Cliente → servidor | Datos                  | Descripción                          |
 |--------------------|------------------------|--------------------------------------|
 | `session:resume`   | —                      | Recupera la sala tras recargar/corte |
-| `room:create`      | `{ name }`             | Crea sala y te hace anfitrión        |
-| `room:join`        | `{ name, code }`       | Entra en una sala por código         |
+| `room:create`      | `{ name, avatar? }`    | Crea sala y te hace anfitrión        |
+| `room:join`        | `{ name, code, avatar? }` | Entra en una sala por código      |
+| `room:profile`     | `{ avatar?, president?, country? }` | Tu avatar, presidente y país en la sala |
 | `room:leave`       | —                      | Sale de la sala                      |
 | `room:settings`    | `{ patch }`            | Cambia ajustes (solo anfitrión)      |
 | `room:ready`       | `{ ready }`            | Marca/desmarca "listo"               |
@@ -198,6 +234,10 @@ Todas las acciones del cliente usan *acknowledgements*: el servidor responde `{ 
 | `game:research`    | `{ tech }`             | Investiga un nivel de doctrina       |
 | `game:researchNode`| `{ node }`             | Investiga un nodo del árbol          |
 | `game:strike`      | `{ weapon, countryId }`| Lanza una bomba                      |
+| `market:trade`     | `{ good, side, amount }` | Compra (`buy`) o vende (`sell`) en la bolsa |
+| `market:offer`     | `{ give, want }`       | Publica una oferta (`{ resource, amount }`) |
+| `market:accept`    | `{ offerId }`          | Acepta la oferta de otro jugador     |
+| `market:cancel`    | `{ offerId }`          | Retira tu oferta                     |
 | `dm:send`          | `{ playerId, text }`   | Mensaje privado                      |
 | `diplo:war`        | `{ playerId }`         | Declara la guerra                    |
 | `diplo:propose`    | `{ playerId, type, trade? }` | Propone paz, pacto, alianza o comercio |
@@ -210,6 +250,7 @@ Todas las acciones del cliente usan *acknowledgements*: el servidor responde `{ 
 | `room:state`       | Instantánea pública de la sala                     |
 | `game:self`        | Datos privados: recursos, tecnología y propuestas (cada segundo) |
 | `diplo:answered`   | Respuesta del otro jugador a tu propuesta          |
+| `market:filled`    | Alguien ha aceptado tu oferta                      |
 | `dm:message`       | Mensaje privado (solo a remitente y destinatario)  |
 | `chat:message`     | Mensaje de chat o de sistema                       |
 | `room:kicked`      | Has sido expulsado                                 |

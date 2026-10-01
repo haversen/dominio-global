@@ -55,7 +55,7 @@
         </form>
       </section>
 
-      <footer class="menu-footer">v1.1 · Dominio Global</footer>
+      <footer class="menu-footer">v1.2 · Dominio Global</footer>
     </div>
   </main>
 
@@ -93,6 +93,33 @@
         <div id="settings-form" class="settings-form"></div>
       </section>
 
+      <section class="panel profile-panel">
+        <div class="panel-head">
+          <h3>Tu mando</h3>
+          <span class="muted">Elige antes de empezar</span>
+        </div>
+        <div class="profile-grid">
+          <div class="profile-block">
+            <span class="profile-label">Avatar</span>
+            <div id="avatar-grid" class="avatar-grid"></div>
+          </div>
+          <div class="profile-block">
+            <span class="profile-label">País inicial</span>
+            <div class="country-pick">
+              <svg id="country-preview" class="country-preview" aria-hidden="true"></svg>
+              <div class="country-pick-fields">
+                <select id="country-select"></select>
+                <small id="country-info" class="muted"></small>
+              </div>
+            </div>
+          </div>
+          <div class="profile-block profile-wide">
+            <span class="profile-label">Presidente</span>
+            <div id="president-list" class="president-list"></div>
+          </div>
+        </div>
+      </section>
+
       <div id="lobby-chat-slot" class="lobby-chat-slot">
       <section id="chat-panel" class="panel chat-panel">
         <div class="panel-head"><h3>Comunicaciones</h3></div>
@@ -119,6 +146,7 @@
       <div id="resources" class="resources"></div>
       <div id="game-players" class="player-chips"></div>
       <button id="btn-diplomacy" class="btn btn-sm topbar-btn" title="Diplomacia y mensajes"><span class="btn-icon">🤝</span><span class="btn-label">Diplomacia</span> <span id="diplo-count" class="count hidden">0</span></button>
+      <button id="btn-market" class="btn btn-sm topbar-btn" title="Mercado de materiales"><span class="btn-icon">📈</span><span class="btn-label">Mercado</span> <span id="market-count" class="count hidden">0</span></button>
       <button id="btn-tech" class="btn btn-sm topbar-btn" title="Tecnología"><span class="btn-icon">🔬</span><span class="btn-label">Tecnología</span> <span id="tech-progress" class="count hidden"></span></button>
       <button id="btn-ranking" class="btn btn-sm topbar-btn" title="Clasificación y objetivos">🏆</button>
       <button class="btn btn-sm topbar-btn btn-mute" title="Silenciar o activar el sonido">🔊</button>
@@ -178,6 +206,7 @@
       <header class="modal-head">
         <nav class="tabs">
           <button class="tab" data-tab="diplomacy">Diplomacia</button>
+          <button class="tab" data-tab="market">Mercado</button>
           <button class="tab" data-tab="tech">Tecnología</button>
           <button class="tab" data-tab="ranking">Clasificación</button>
         </nav>

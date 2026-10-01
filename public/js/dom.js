@@ -92,3 +92,20 @@ export function guardTaps(el, onRelease) {
   window.addEventListener('touchcancel', release);
   return { isPressed: () => pressed };
 }
+
+/** Duración legible también para partidas de días: «2 d 05 h», «3:04:09», «04:09». */
+export function durationText(ms) {
+  const secs = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(secs / 86400);
+  const hrs = Math.floor((secs % 86400) / 3600);
+  const min = Math.floor((secs % 3600) / 60);
+  const pad = (n) => String(n).padStart(2, '0');
+  if (d > 0) return `${d} d ${pad(hrs)} h`;
+  if (hrs > 0) return `${hrs}:${pad(min)}:${pad(secs % 60)}`;
+  return `${pad(min)}:${pad(secs % 60)}`;
+}
+
+/** Avatar de un jugador (emoji). */
+export function avatarEl(player) {
+  return h('span', { class: 'avatar', 'aria-hidden': 'true' }, player?.avatar ?? '🪖');
+}

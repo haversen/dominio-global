@@ -2,15 +2,25 @@
 
 const TOKEN_KEY = 'dg.token';
 
-// sessionStorage: cada pestaña es un jugador distinto (útil para probar en local)
-// y el token sobrevive a recargas, lo que permite reconectar a la misma partida.
+// localStorage: el token sobrevive a recargas y a cerrar el navegador, así que se puede
+// volver a una partida larga días después desde el mismo dispositivo.
+// Para probar con varios jugadores en un mismo ordenador, usa ventanas de incógnito.
 // crypto.getRandomValues funciona también por http en la red local (randomUUID no).
+const store = (() => {
+  try {
+    localStorage.setItem('dg.test', '1');
+    return localStorage;
+  } catch {
+    return sessionStorage; // navegación privada antigua sin localStorage
+  }
+})();
+
 function getToken() {
-  let token = sessionStorage.getItem(TOKEN_KEY);
+  let token = store.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY);
   if (!token || !/^[a-f0-9]{32}$/.test(token)) {
     const bytes = crypto.getRandomValues(new Uint8Array(16));
     token = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-    sessionStorage.setItem(TOKEN_KEY, token);
+    store.setItem(TOKEN_KEY, token);
   }
   return token;
 }

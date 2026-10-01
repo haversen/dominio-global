@@ -1,11 +1,19 @@
 import { SETTINGS_SCHEMA, optionLabel } from '/shared/settings.js';
 import { socket, request } from './net.js';
-import { $, h, toast, copyText } from './dom.js';
+import { $, h, toast, copyText, avatarEl } from './dom.js';
+import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, PRESIDENT_IDS } from '/shared/leaders.js';
 import { GameView, loadWorld } from './game-ui.js';
 import { play, isMuted, setMuted } from './sound.js';
 import { decodeCountries } from '/shared/wire.js';
 
 const NAME_KEY = 'dg.name';
+const AVATAR_KEY = 'dg.avatar';
+const PRESIDENT_KEY = 'dg.president';
+
+const savedAvatar = () => {
+  const a = localStorage.getItem(AVATAR_KEY);
+  return AVATARS.includes(a) ? a : DEFAULT_AVATAR;
+};
 
 // Estado local: solo es un reflejo de lo que dice el servidor.
 const state = {
@@ -23,6 +31,7 @@ function showScreen(name) {
 }
 
 const gameView = new GameView(() => state);
+let worldData = null; // mapa (para elegir país en la sala)
 
 function render() {
   const { room } = state;
@@ -58,12 +67,19 @@ function setRoom(room) {
 }
 
 function enterRoom(res) {
+  const fresh = state.room?.code !== res.room.code;
   state.me = res.you;
   state.self = res.self ?? null;
   gameView.diplo.loadDirect(res.dms);
   resetChat(res.chat);
   setRoom(res.room);
   history.replaceState(null, '', `?code=${res.room.code}`);
+  // El presidente elegido la última vez se recuerda para la siguiente sala.
+  const me = res.room.players.find((p) => p.id === res.you);
+  const president = localStorage.getItem(PRESIDENT_KEY);
+  if (fresh && res.room.state === 'lobby' && PRESIDENTS[president] && me?.president !== president) {
+    request('room:profile', { president });
+  }
 }
 
 function exitToMenu(message, kind = 'info') {
@@ -112,7 +128,7 @@ $('#btn-create').addEventListener('click', (e) => {
   const name = readName();
   if (!name) return;
   withBusy(e.currentTarget, async () => {
-    const res = await request('room:create', { name });
+    const res = await request('room:create', { name, avatar: savedAvatar() });
     if (!res.ok) return toast(res.error, 'error');
     enterRoom(res);
   });
@@ -132,7 +148,7 @@ $('#menu-join').addEventListener('submit', (e) => {
   const code = codeInput.value.trim();
   if (code.length !== 6) return toast('El código tiene 6 caracteres', 'error');
   withBusy($('#btn-join'), async () => {
-    const res = await request('room:join', { name, code });
+    const res = await request('room:join', { name, code, avatar: savedAvatar() });
     if (!res.ok) return toast(res.error, 'error');
     enterRoom(res);
   });
@@ -228,6 +244,112 @@ function renderLobby() {
     hint = me?.ready ? 'Esperando a que el anfitrión empiece…' : 'Marca que estás listo cuando quieras';
   }
   $('#start-hint').textContent = hint;
+  renderProfile(me);
+}
+
+// ---------- Tu mando: avatar, presidente y país ----------
+
+async function setProfile(patch) {
+  const res = await request('room:profile', patch);
+  if (!res.ok) {
+    toast(res.error, 'error');
+    renderLobby();
+  }
+  return res.ok;
+}
+
+function renderProfile(me) {
+  if (!me) return;
+  $('#avatar-grid').replaceChildren(...AVATARS.map((a) => h('button', {
+    class: `avatar-option${me.avatar === a ? ' active' : ''}`,
+    title: 'Elegir este avatar',
+    onClick: () => {
+      localStorage.setItem(AVATAR_KEY, a);
+      setProfile({ avatar: a });
+    },
+  }, a)));
+
+  $('#president-list').replaceChildren(...PRESIDENT_IDS.map((id) => {
+    const p = PRESIDENTS[id];
+    return h('button', {
+      class: `president-card${me.president === id ? ' active' : ''}`,
+      onClick: () => {
+        localStorage.setItem(PRESIDENT_KEY, id);
+        setProfile({ president: id });
+      },
+    },
+    h('span', { class: 'president-portrait' }, p.portrait),
+    h('span', { class: 'president-text' },
+      h('strong', {}, p.title),
+      h('small', { class: 'muted' }, p.name),
+      h('span', { class: 'president-perk' }, p.perk)));
+  }));
+
+  renderCountryPick(me);
+}
+
+const countrySelect = $('#country-select');
+countrySelect.addEventListener('change', async () => {
+  const value = countrySelect.value || null;
+  await setProfile({ country: value });
+});
+
+function renderCountryPick(me) {
+  const world = worldData;
+  if (!world) {
+    loadWorld().then((w) => { worldData = w; if (state.room?.state === 'lobby') renderLobby(); }).catch(() => {});
+    return;
+  }
+  const others = state.room.players.filter((p) => p.id !== me.id && p.country);
+  const blockedBy = new Map();
+  for (const o of others) {
+    blockedBy.set(o.country, o.name);
+    for (const n of world.byId.get(o.country)?.neighbors ?? []) if (!blockedBy.has(n)) blockedBy.set(n, o.name);
+  }
+  // Las opciones se construyen una vez; luego solo se actualiza cuáles están bloqueadas.
+  if (countrySelect.options.length === 0) {
+    const sorted = [...world.countries].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    countrySelect.append(h('option', { value: '' }, '🎲 El que me toque'),
+      ...sorted.map((c) => h('option', { value: c.id }, c.name)));
+  }
+  for (const opt of countrySelect.options) {
+    if (!opt.value) continue;
+    const by = blockedBy.get(opt.value);
+    opt.disabled = Boolean(by);
+    const name = world.byId.get(opt.value).name;
+    opt.textContent = by ? `${name} (cerca de ${by})` : name;
+  }
+  if (document.activeElement !== countrySelect) countrySelect.value = me.country ?? '';
+
+  const c = me.country ? world.byId.get(me.country) : null;
+  $('#country-info').textContent = c
+    ? `${c.coastal ? 'Con costa' : 'Sin costa'} · ${c.neighbors.length} vecinos · ${new Intl.NumberFormat('es-ES').format(Math.round(c.area / 1000))} mil km²`
+    : state.room.settings.countryAssignment === 'choose'
+      ? 'Si no eliges aquí, lo elegirás en el mapa al empezar.'
+      : 'Si no eliges, recibirás un país al azar lejos de los demás.';
+  drawPreview(c);
+}
+
+let previewId;
+function drawPreview(c) {
+  const svg = $('#country-preview');
+  if ((c?.id ?? null) === previewId) return;
+  previewId = c?.id ?? null;
+  if (!c) {
+    svg.replaceChildren();
+    svg.removeAttribute('viewBox');
+    svg.classList.add('empty');
+    return;
+  }
+  svg.classList.remove('empty');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', c.d);
+  svg.replaceChildren(path);
+  requestAnimationFrame(() => {
+    const b = path.getBBox();
+    const pad = Math.max(b.width, b.height) * 0.08 + 1;
+    svg.setAttribute('viewBox', `${b.x - pad} ${b.y - pad} ${b.width + pad * 2} ${b.height + pad * 2}`);
+  });
 }
 
 function playerItem(p, viewerIsHost) {
@@ -245,9 +367,13 @@ function playerItem(p, viewerIsHost) {
       }, 'Expulsar')
     : null;
 
+  const pres = PRESIDENTS[p.president];
+  const country = p.country && worldData?.byId.get(p.country)?.name;
   return h('li', { class: `player${p.connected ? '' : ' offline'}${isMe ? ' me' : ''}` },
     h('span', { class: 'swatch', style: { background: p.color } }),
-    h('span', { class: 'player-name' }, p.name, isMe ? h('em', {}, ' (tú)') : null),
+    h('span', { class: 'player-avatar' }, p.avatar ?? DEFAULT_AVATAR),
+    h('span', { class: 'player-name' }, p.name, isMe ? h('em', {}, ' (tú)') : null,
+      h('small', { class: 'player-sub' }, `${pres ? `${pres.portrait} ${pres.title}` : ''} · ${country ?? '🎲 país al azar'}`)),
     h('span', { class: 'badges' }, badges),
     kick,
   );
@@ -305,6 +431,7 @@ function chatItem(msg) {
   }
   return h('li', { class: 'chat-msg' },
     h('time', {}, time),
+    msg.avatar && avatarEl(msg),
     h('strong', { style: { color: msg.color } }, msg.name),
     h('span', {}, msg.text),
   );
@@ -397,6 +524,15 @@ for (const btn of document.querySelectorAll('.btn-mute')) {
 renderMute();
 
 // ================= Inicio =================
+
+// Alto real de la pantalla: en los móviles, 100vh incluye la barra del navegador
+// y dejaría el panel inferior escondido debajo.
+function setAppHeight() {
+  document.documentElement.style.setProperty('--app-h', `${window.visualViewport?.height ?? window.innerHeight}px`);
+}
+window.addEventListener('resize', setAppHeight);
+window.visualViewport?.addEventListener('resize', setAppHeight);
+setAppHeight();
 
 buildSettingsForm();
 render();
