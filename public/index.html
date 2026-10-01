@@ -55,7 +55,7 @@
         </form>
       </section>
 
-      <footer class="menu-footer">v1.0 · Dominio Global</footer>
+      <footer class="menu-footer">v1.1 · Dominio Global</footer>
     </div>
   </main>
 
@@ -118,13 +118,13 @@
       <div class="game-brand">DOMINIO <span>GLOBAL</span></div>
       <div id="resources" class="resources"></div>
       <div id="game-players" class="player-chips"></div>
-      <button id="btn-diplomacy" class="btn btn-sm topbar-btn">Diplomacia <span id="diplo-count" class="count hidden">0</span></button>
-      <button id="btn-tech" class="btn btn-sm topbar-btn">Tecnología <span id="tech-progress" class="count hidden"></span></button>
+      <button id="btn-diplomacy" class="btn btn-sm topbar-btn" title="Diplomacia y mensajes"><span class="btn-icon">🤝</span><span class="btn-label">Diplomacia</span> <span id="diplo-count" class="count hidden">0</span></button>
+      <button id="btn-tech" class="btn btn-sm topbar-btn" title="Tecnología"><span class="btn-icon">🔬</span><span class="btn-label">Tecnología</span> <span id="tech-progress" class="count hidden"></span></button>
       <button id="btn-ranking" class="btn btn-sm topbar-btn" title="Clasificación y objetivos">🏆</button>
       <button class="btn btn-sm topbar-btn btn-mute" title="Silenciar o activar el sonido">🔊</button>
       <span class="game-clock" title="Tiempo de partida"><span id="game-clock">00:00</span></span>
       <span class="room-tag">Sala <strong id="game-code"></strong></span>
-      <button id="btn-leave-game" class="btn btn-ghost btn-sm">Abandonar</button>
+      <button id="btn-leave-game" class="btn btn-ghost btn-sm topbar-btn" title="Abandonar la partida"><span class="btn-icon">✕</span><span class="btn-label">Abandonar</span></button>
     </header>
 
     <div class="game-body">
@@ -159,9 +159,16 @@
         <svg id="minimap" class="minimap" aria-label="Minimapa"></svg>
       </div>
 
-      <aside class="side-panel">
-        <section id="country-panel" class="panel country-panel"></section>
-        <div id="game-chat-slot" class="game-chat-slot"></div>
+      <aside id="side-panel" class="side-panel">
+        <button id="sheet-handle" class="sheet-handle" aria-label="Abrir o cerrar el panel">
+          <span class="grip"></span>
+          <span id="sheet-title" class="sheet-title">Panel y chat</span>
+          <span class="sheet-arrow">▲</span>
+        </button>
+        <div class="sheet-content">
+          <section id="country-panel" class="panel country-panel"></section>
+          <div id="game-chat-slot" class="game-chat-slot"></div>
+        </div>
       </aside>
     </div>
   </main>

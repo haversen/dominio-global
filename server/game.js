@@ -5,9 +5,12 @@ import {
 } from '../shared/economy.js';
 import {
   UNITS, UNIT_TYPES, GAME_SPEEDS, emptyUnits, addUnits, totalUnits, neutralGarrison, startingArmy,
-  moveError, travelMs, resolveBattle, terrainOf,
+  moveError, travelMs, resolveBattle, terrainOf, WEAPONS, interceptChance, strikeDamage,
 } from '../shared/military.js';
-import { TECHS, TECH_MAX_LEVEL, emptyTech, techCost, techMs, techBonus } from '../shared/tech.js';
+import {
+  TECHS, TECH_MAX_LEVEL, TECH_TREE, emptyTech, techCost, techMs, techBonus, startingUnlocks, isUnlocked,
+  nodeError,
+} from '../shared/tech.js';
 import { relationOf, tickDiplomacy, forgetPlayer } from './diplomacy.js';
 import { createAIState, tickAI } from './ai.js';
 import { standings, checkVictory } from './victory.js';
@@ -31,7 +34,8 @@ const EVENT_HISTORY = 30;
  *   armies:    [{ id, owner, from, to, units, departAt, arriveAt }]   tropas en marcha
  *   events:    últimas batallas y eliminaciones (para avisos y animaciones)
  *   homes:     { [playerId]: countryId }  capital de cada jugador (se pierde si la conquistan)
- *   players:   { [playerId]: { resources, eliminated, tech, research } }  (privado)
+ *   players:   { [playerId]: { resources, eliminated, tech, unlocked, research, cooldowns } }  (privado)
+ *   strikes:   [{ id, owner, weapon, from, to, departAt, arriveAt }]  bombas en vuelo
  *   relations: { 'a|b': { state, until } }  diplomacia entre jugadores (por defecto, paz)
  *   proposals: [{ id, type, from, to, expiresAt, trade? }]  propuestas pendientes (privadas)
  */
@@ -53,7 +57,9 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
       resources: { ...STARTING_RESOURCES },
       eliminated: false,
       tech: emptyTech(),
-      research: null,
+      unlocked: startingUnlocks(), // nodos del árbol tecnológico investigados
+      research: null,              // { tech, toLevel, readyAt } o { node, readyAt }
+      cooldowns: {},               // arma -> momento en que se puede volver a lanzar
       stats: { battlesWon: 0, battlesLost: 0, conquests: 0, unitsLost: 0 },
     }])),
     startPlayers: playerIds.length,
@@ -66,6 +72,7 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
     relations: {},
     proposals: [],
     armies: [],
+    strikes: [],
     events: [],
     seq: 0,
     startedAt: null,
@@ -140,7 +147,10 @@ function economyTotals(game) {
   for (const [id, c] of Object.entries(game.countries)) {
     if (!c.owner || !game.players[c.owner]) continue;
     const t = entry(c.owner);
-    addResources(t.income, countryIncome(COUNTRIES.get(id), c.level, game.homes[c.owner] === id));
+    // Un país contaminado por una bomba nuclear no produce nada.
+    if (!(c.contaminatedUntil > game.lastTick)) {
+      addResources(t.income, countryIncome(COUNTRIES.get(id), c.level, game.homes[c.owner] === id));
+    }
     addUnits(t.units, c.units);
   }
   for (const a of game.armies) if (a.owner && game.players[a.owner]) addUnits(entry(a.owner).units, a.units);
@@ -189,8 +199,11 @@ export function recruit(game, playerId, countryId, type, count, now = Date.now()
   if (!country || country.owner !== playerId) return 'Solo puedes reclutar en tus países';
   const unit = UNITS[type];
   if (!unit) return 'Tipo de unidad desconocido';
+  if (!isUnlocked(game.players[playerId].unlocked, { unit: type })) {
+    return `Primero tienes que investigar ${unit.label} en el árbol tecnológico`;
+  }
   if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH) return `Puedes reclutar de 1 a ${MAX_BATCH} unidades`;
-  if (unit.coastalOnly && !COUNTRIES.get(countryId).coastal) return 'La marina solo se construye en países con costa';
+  if (unit.domain === 'sea' && !COUNTRIES.get(countryId).coastal) return 'Los barcos solo se construyen en países con costa';
 
   const cost = scaleCost(unit.cost, count);
   const player = game.players[playerId];
@@ -235,6 +248,110 @@ export function research(game, playerId, tech, now = Date.now()) {
   addResources(player.resources, cost, -1);
   player.research = { tech, toLevel, readyAt: now + Math.round(techMs(toLevel) / game.speed) };
   return null;
+}
+
+/** Investiga un nodo del árbol tecnológico (desbloquea una unidad o un arma). */
+export function researchNode(game, playerId, nodeId, now = Date.now()) {
+  if (game.phase !== 'active') return 'La partida todavía no está en marcha';
+  const player = game.players[playerId];
+  if (!player || player.eliminated) return 'Jugador no válido';
+  if (player.research) return 'Ya estás investigando otra tecnología';
+  const error = nodeError(player.unlocked, nodeId);
+  if (error) return error;
+  const node = TECH_TREE[nodeId];
+  if (!canAfford(player.resources, node.cost)) return 'No tienes recursos suficientes';
+
+  addResources(player.resources, node.cost, -1);
+  player.research = { node: nodeId, readyAt: now + Math.round(node.ms / game.speed) };
+  return null;
+}
+
+// Saltos de frontera desde cualquier país del jugador (para el alcance de las bombas).
+function hopsFromPlayer(game, playerId, maxHops) {
+  const dist = new Map();
+  const queue = [];
+  for (const [id, c] of Object.entries(game.countries)) {
+    if (c.owner === playerId) {
+      dist.set(id, { hops: 0, from: id });
+      queue.push(id);
+    }
+  }
+  while (queue.length) {
+    const id = queue.shift();
+    const { hops, from } = dist.get(id);
+    if (hops >= maxHops) continue;
+    for (const n of COUNTRIES.get(id).neighbors) {
+      if (!dist.has(n)) {
+        dist.set(n, { hops: hops + 1, from });
+        queue.push(n);
+      }
+    }
+  }
+  return dist;
+}
+
+/** Lanza una bomba contra un país. Devuelve { error } o { strike }. */
+export function launchStrike(game, playerId, weapon, targetId, now = Date.now()) {
+  if (game.phase !== 'active') return { error: 'La partida todavía no está en marcha' };
+  const player = game.players[playerId];
+  const spec = WEAPONS[weapon];
+  if (!player || player.eliminated) return { error: 'Jugador no válido' };
+  if (!spec) return { error: 'Arma desconocida' };
+  if (!isUnlocked(player.unlocked, { weapon })) return { error: `Primero tienes que investigar: ${spec.label}` };
+  const target = game.countries[targetId];
+  if (!target) return { error: 'Ese país no existe' };
+  if (target.owner === playerId) return { error: 'No puedes bombardear tus propios países' };
+  if (target.owner) {
+    const rel = relationOf(game.relations, playerId, target.owner).state;
+    if (rel !== 'war') return { error: 'Solo puedes bombardear a jugadores con los que estás en guerra' };
+  }
+  if ((player.cooldowns[weapon] ?? 0) > now) return { error: 'Esa arma todavía se está recargando' };
+  const reach = hopsFromPlayer(game, playerId, spec.range).get(targetId);
+  if (!reach) return { error: `Fuera de alcance: ${spec.label} llega a ${spec.range} país(es) de distancia` };
+  if (!canAfford(player.resources, spec.cost)) return { error: 'No tienes recursos suficientes' };
+
+  addResources(player.resources, spec.cost, -1);
+  player.cooldowns[weapon] = now + Math.round(spec.cooldownMs / game.speed);
+  const strike = {
+    id: ++game.seq,
+    owner: playerId,
+    weapon,
+    from: reach.from,
+    to: targetId,
+    departAt: now,
+    arriveAt: now + Math.round(spec.flightMs / game.speed),
+  };
+  game.strikes.push(strike);
+  return { strike };
+}
+
+function strikeHits(game, strike, now, rng) {
+  const target = game.countries[strike.to];
+  const spec = WEAPONS[strike.weapon];
+  const event = {
+    id: ++game.seq,
+    ts: now,
+    type: 'strike',
+    weapon: strike.weapon,
+    country: strike.to,
+    attacker: strike.owner,
+    defender: target.owner,
+    intercepted: rng() < interceptChance(target.units, strike.weapon),
+    losses: emptyUnits(),
+    levelsLost: 0,
+  };
+  if (!event.intercepted) {
+    const { unitsLeft, levelsLost } = strikeDamage(target.units, strike.weapon, rng);
+    for (const t of UNIT_TYPES) event.losses[t] = target.units[t] - unitsLeft[t];
+    target.units = unitsLeft;
+    event.levelsLost = Math.min(levelsLost, target.level - 1);
+    target.level -= event.levelsLost;
+    if (spec.contaminationMs) target.contaminatedUntil = now + Math.round(spec.contaminationMs / game.speed);
+    const stats = game.players[target.owner]?.stats;
+    if (stats) stats.unitsLost += totalUnits(event.losses);
+  }
+  pushEvent(game, event);
+  return event;
 }
 
 function playerSpeed(game, playerId) {
@@ -332,8 +449,10 @@ export function tickGame(game, playerIds, now = Date.now(), rng = Math.random) {
 
   for (const [pid, player] of Object.entries(game.players)) {
     if (player.research && player.research.readyAt <= now) {
-      player.tech[player.research.tech] = player.research.toLevel;
-      events.push({ type: 'research', player: pid, tech: player.research.tech, level: player.research.toLevel });
+      const r = player.research;
+      if (r.node) player.unlocked.push(r.node);
+      else player.tech[r.tech] = r.toLevel;
+      events.push({ type: 'research', player: pid, ...r });
       player.research = null;
     }
   }
@@ -341,6 +460,19 @@ export function tickGame(game, playerIds, now = Date.now(), rng = Math.random) {
   const diplomacy = tickDiplomacy(game, now);
   if (diplomacy.changed) changed = true;
   for (const [a, b] of diplomacy.endedPacts) events.push({ type: 'pact-ended', players: [a, b] });
+
+  const landed = game.strikes.filter((s) => s.arriveAt <= now);
+  if (landed.length) {
+    game.strikes = game.strikes.filter((s) => s.arriveAt > now);
+    for (const strike of landed) events.push(strikeHits(game, strike, now, rng));
+    changed = true;
+  }
+  for (const c of Object.values(game.countries)) {
+    if (c.contaminatedUntil && c.contaminatedUntil <= now) {
+      delete c.contaminatedUntil;
+      changed = true;
+    }
+  }
 
   const arrived = game.armies.filter((a) => a.arriveAt <= now).sort((a, b) => a.arriveAt - b.arriveAt);
   if (arrived.length) {
@@ -373,6 +505,7 @@ export function checkEnd(game, now = Date.now()) {
   if (!outcome) return null;
   game.phase = 'ended';
   game.armies = [];
+  game.strikes = [];
   game.proposals = [];
   game.result = { ...outcome, endedAt: now, duration: now - game.startedAt, standings: table };
   return game.result;
@@ -513,6 +646,7 @@ export function releasePlayer(game, playerId) {
     }
   }
   game.armies = game.armies.filter((a) => a.owner !== playerId);
+  game.strikes = game.strikes.filter((s) => s.owner !== playerId);
   forgetPlayer(game, playerId);
   delete game.homes[playerId];
   delete game.picks[playerId];
@@ -531,6 +665,7 @@ export function publicGame(game) {
     picks: game.picks,
     countries: encodeCountries(game.countries),
     armies: game.armies,
+    strikes: game.strikes,
     events: game.events,
     relations: game.relations,
     victory: game.victory,
@@ -553,6 +688,8 @@ export function privateGame(game, playerId) {
     supply: supplyOf(game, playerId),
     eliminated: player.eliminated,
     tech: player.tech,
+    unlocked: player.unlocked,
+    cooldowns: player.cooldowns,
     research: player.research,
     proposals: game.proposals.filter((p) => p.from === playerId || p.to === playerId),
   };

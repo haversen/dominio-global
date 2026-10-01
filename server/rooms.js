@@ -2,9 +2,11 @@ import { generateCode, normalizeCode, randomId, sanitizeName, sanitizeChat } fro
 import { defaultSettings, applySettingsPatch } from '../shared/settings.js';
 import {
   createGame, pickCountry, allPicked, finishPicking, releasePlayer, tickGame, publicGame,
-  privateGameWithStandings, developCountry, recruit, moveArmy, research, checkEnd, currentStandings,
-  COUNTRIES,
+  privateGameWithStandings, developCountry, recruit, moveArmy, research, researchNode, launchStrike,
+  checkEnd, currentStandings, COUNTRIES,
 } from './game.js';
+import { WEAPONS } from '../shared/military.js';
+import { pairKey } from '../shared/diplomacy.js';
 import { VICTORY_REASONS } from '../shared/score.js';
 import { declareWar, propose, respond, cancelProposal } from './diplomacy.js';
 
@@ -22,6 +24,7 @@ export const EMPTY_ROOM_TTL_MS = {
   finished: 60_000,
 };
 const CHAT_HISTORY_SIZE = 50;
+const DM_HISTORY_SIZE = 50;
 const CHAT_COOLDOWN_MS = 500;
 
 export class GameError extends Error {
@@ -99,6 +102,7 @@ export class RoomManager {
       startedAt: null,
       emptySince: null,
       game: null,
+      dms: new Map(), // conversaciones privadas: 'a|b' -> [mensajes]
     };
     this.rooms.set(code, room);
 
@@ -265,6 +269,51 @@ export class RoomManager {
     this.#requirePlaying(room);
     const error = research(room.game, player.id, tech);
     if (error) throw new GameError('INVALID_ACTION', error);
+  }
+
+  researchNode(room, player, nodeId) {
+    this.#requirePlaying(room);
+    const error = researchNode(room.game, player.id, nodeId);
+    if (error) throw new GameError('INVALID_ACTION', error);
+  }
+
+  launchStrike(room, player, weapon, targetId) {
+    this.#requirePlaying(room);
+    const { error, strike } = launchStrike(room.game, player.id, weapon, targetId);
+    if (error) throw new GameError('INVALID_ACTION', error);
+    if (weapon === 'nuke') {
+      this.#system(room, `☢ ¡ALERTA! ${player.name} ha lanzado una bomba nuclear contra ${COUNTRIES.get(targetId).name}`);
+    }
+    return strike;
+  }
+
+  // ---------- Mensajes privados ----------
+
+  sendDirect(room, player, targetId, rawText) {
+    const target = room.players.get(targetId);
+    if (!target || target.id === player.id) throw new GameError('INVALID', 'Ese jugador no está en la sala');
+    const text = sanitizeChat(rawText);
+    if (!text) throw new GameError('INVALID', 'Mensaje vacío');
+    const now = Date.now();
+    if (now - player.lastChatAt < CHAT_COOLDOWN_MS) {
+      throw new GameError('RATE_LIMIT', 'Estás enviando mensajes demasiado rápido');
+    }
+    player.lastChatAt = now;
+
+    const key = pairKey(player.id, target.id);
+    const thread = room.dms.get(key) ?? [];
+    const msg = { id: randomId(), from: player.id, to: target.id, text, ts: now };
+    thread.push(msg);
+    if (thread.length > DM_HISTORY_SIZE) thread.shift();
+    room.dms.set(key, thread);
+    return { msg, target };
+  }
+
+  /** Todas las conversaciones privadas en las que participa un jugador. */
+  directHistory(room, playerId) {
+    const out = [];
+    for (const [key, thread] of room.dms) if (key.split('|').includes(playerId)) out.push(...thread);
+    return out.sort((a, b) => a.ts - b.ts);
   }
 
   // ---------- Diplomacia ----------
@@ -481,6 +530,14 @@ export class RoomManager {
     }
     if (event.type === 'reinforce') {
       this.#system(room, `🤝 ${name(event.from)} envía refuerzos a ${COUNTRIES.get(event.country).name}`);
+      return;
+    }
+    if (event.type === 'strike') {
+      const spec = WEAPONS[event.weapon];
+      const target = COUNTRIES.get(event.country).name;
+      this.#system(room, event.intercepted
+        ? `🛡 Las defensas de ${target} interceptan un ${spec.label.toLowerCase()} de ${name(event.attacker)}`
+        : `${spec.icon} ${name(event.attacker)} alcanza ${target} con: ${spec.label.toLowerCase()}`);
       return;
     }
     if (event.type !== 'battle') return; // p. ej. investigación: es privada

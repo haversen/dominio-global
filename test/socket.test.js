@@ -124,7 +124,9 @@ test('partida: recursos privados y órdenes militares en tiempo real', async () 
   await req(b, 'room:ready', { ready: true });
 
   const selfA = nextEvent(a, 'game:self');
-  const publicB = nextEvent(b, 'room:state');
+  const publicB = new Promise((resolve) => {
+    b.on('room:state', (st) => { if (st.state === 'playing') resolve(st); });
+  });
   await req(a, 'room:start');
   const mine = await selfA;
   assert.ok(mine.resources.money > 0);
@@ -162,4 +164,28 @@ test('robustez: limita las ráfagas de acciones y expone métricas en /health', 
   assert.equal(health.ok, true);
   assert.ok(health.rooms >= 1 && health.players >= 1);
   assert.equal(typeof health.tickAvgMs, 'number');
+});
+
+test('mensajes privados: solo los reciben remitente y destinatario', async () => {
+  const a = await client();
+  const b = await client();
+  const c = await client();
+  const { room } = await req(a, 'room:create', { name: 'Ana' });
+  const { you: bId } = await req(b, 'room:join', { name: 'Beto', code: room.code });
+  await req(c, 'room:join', { name: 'Ciro', code: room.code });
+
+  let leaked = false;
+  c.on('dm:message', () => { leaked = true; });
+  const received = nextEvent(b, 'dm:message');
+  const echoed = nextEvent(a, 'dm:message');
+  assert.equal((await req(a, 'dm:send', { playerId: bId, text: 'Pacto secreto' })).ok, true);
+  assert.equal((await received).text, 'Pacto secreto');
+  assert.equal((await echoed).to, bId);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(leaked, false);
+
+  // El historial se recupera al reconectar.
+  const resumed = await req(b, 'session:resume');
+  assert.equal(resumed.dms.length, 1);
+  assert.equal((await req(a, 'dm:send', { playerId: 'nadie', text: 'hola' })).ok, false);
 });

@@ -83,12 +83,16 @@ No hay turnos: cada jugador actúa desde su dispositivo cuando quiere y el servi
 
 ### Tropas y combate (`shared/military.js`)
 
-| Unidad     | Ataque | Defensa | Mantenimiento | Notas                                           |
-|------------|--------|---------|---------------|-------------------------------------------------|
-| Infantería | 1      | 1,5     | alimentos     | barata, lenta                                    |
-| Tanques    | 4      | 3       | petróleo      | sufren en montaña, selva y hielo                 |
-| Aviación   | 5      | 2       | petróleo      | muy rápida, cruza el mar sin barcos              |
-| Marina     | 3      | 3       | petróleo      | solo en países con costa; necesaria para cruzar el mar con tropas de tierra |
+Doce tipos de unidad en cuatro ramas. El nivel I viene de serie; los niveles II y III se desbloquean en el árbol tecnológico.
+
+| Rama        | Nivel I            | Nivel II                 | Nivel III                     |
+|-------------|--------------------|--------------------------|-------------------------------|
+| Infantería  | Infantería (1/1,5) | Infantería mecanizada (2/2,5) | Fuerzas especiales (4/3, ignoran el terreno) |
+| Blindados   | Tanques (4/3)      | Tanques pesados (7/6)    | Carros de combate modernos (10/8) |
+| Aviación    | Cazas (5/2)        | Bombarderos (9/1)        | Cazas a reacción (8/5)        |
+| Marina      | Destructores (3/3) | Submarinos (6/2)         | Portaaviones (5/8)            |
+
+(ataque/defensa). La infantería consume alimentos y el resto petróleo; los barcos solo se construyen en países con costa y hacen falta para cruzar el mar con tropas de tierra; cazas y portaaviones interceptan bombas.
 
 - Reclutar tarda unos segundos (entrenamiento). Las tropas se mueven solo a países vecinos y tardan según la distancia y la unidad más lenta. Todos los jugadores ven los ejércitos en marcha.
 - Al llegar a un país ajeno hay batalla: fuerza de cada bando × terreno × capital (+25 %) × desarrollo × desembarco (−25 %) × suministro × azar (±20 %). Si gana el atacante, conquista el país (que pierde un nivel de desarrollo); si no, sus tropas se pierden. El ganador sufre bajas según lo igualada que estuviera la batalla.
@@ -103,7 +107,20 @@ No hay turnos: cada jugador actúa desde su dispositivo cuando quiere y el servi
 - Entre **aliados**, enviar tropas a un país del aliado lo refuerza (las tropas pasan a defenderlo). Romper una alianza es declarar la guerra y se anuncia como traición.
 - Si se firma la paz mientras un ejército está en marcha, al llegar da media vuelta.
 - **Comercio**: se ofrecen recursos a cambio de otros (o se regalan). El servidor comprueba que ambos los tengan en el momento de aceptar.
-- **Tecnología** (`shared/tech.js`): Industrialización (+10 % producción), Doctrina militar (+10 % ataque), Fortificaciones (+10 % defensa) y Logística (+15 % velocidad, −10 % mantenimiento). Tres niveles cada una; una investigación a la vez.
+- **Mensajes privados**: desde Diplomacia se puede hablar en privado con cada jugador; solo lo ven remitente y destinatario.
+- **Tecnología** (`shared/tech.js`), una investigación a la vez:
+  - *Árbol de investigación* (estilo War Thunder): ramas de infantería, blindados, aviación, marina y bombas, con niveles I-III que exigen el anterior.
+  - *Doctrinas*: Industrialización (+10 % producción), Doctrina militar (+10 % ataque), Fortificaciones (+10 % defensa) y Logística (+15 % velocidad, −10 % mantenimiento), con tres niveles cada una.
+
+### Bombas
+
+| Arma | Alcance | Efecto | Recarga |
+|------|---------|--------|---------|
+| 💣 Bombardeo convencional | 1 país | destruye el 25 % de las tropas | 20 s |
+| 🚀 Misil balístico | 3 países | 40 % de las tropas y −1 nivel de desarrollo | 45 s |
+| ☢ Bomba nuclear | 5 países | 85 % de las tropas, desarrollo a nivel 1 y 3 min sin producción | 3 min |
+
+Se compran al lanzarlas, solo contra neutrales o jugadores con los que estás en guerra, y se ven volar por el mapa. Los cazas, cazas a reacción y portaaviones del objetivo pueden interceptarlas. Un lanzamiento nuclear se anuncia a todos.
 
 ### IA neutral y victoria
 
@@ -119,6 +136,8 @@ No hay turnos: cada jugador actúa desde su dispositivo cuando quiere y el servi
 - Al terminar se muestra la clasificación con estadísticas de batallas, y el anfitrión puede volver al lobby para jugar la revancha.
 
 ## Sonido y avisos
+
+En el móvil, el mapa ocupa la pantalla y el panel del país es una hoja que se desliza desde abajo (se abre al tocar un país).
 
 Los efectos se sintetizan en el navegador con Web Audio (`public/js/sound.js`), sin archivos: reclutar, marchar, batallas, conquistas, alarma de ataque entrante, propuestas diplomáticas, inicio y fin de partida. El botón 🔊 los silencia (se recuerda en el navegador).
 
@@ -176,7 +195,10 @@ Todas las acciones del cliente usan *acknowledgements*: el servidor responde `{ 
 | `game:develop`     | `{ countryId }`        | Inicia el desarrollo de un país propio |
 | `game:recruit`     | `{ countryId, type, count }` | Recluta unidades (tardan en estar listas) |
 | `game:move`        | `{ from, to, units }`  | Envía tropas a un vecino (refuerzo o ataque) |
-| `game:research`    | `{ tech }`             | Inicia una investigación             |
+| `game:research`    | `{ tech }`             | Investiga un nivel de doctrina       |
+| `game:researchNode`| `{ node }`             | Investiga un nodo del árbol          |
+| `game:strike`      | `{ weapon, countryId }`| Lanza una bomba                      |
+| `dm:send`          | `{ playerId, text }`   | Mensaje privado                      |
 | `diplo:war`        | `{ playerId }`         | Declara la guerra                    |
 | `diplo:propose`    | `{ playerId, type, trade? }` | Propone paz, pacto, alianza o comercio |
 | `diplo:respond`    | `{ proposalId, accept }` | Acepta o rechaza una propuesta     |
@@ -188,6 +210,7 @@ Todas las acciones del cliente usan *acknowledgements*: el servidor responde `{ 
 | `room:state`       | Instantánea pública de la sala                     |
 | `game:self`        | Datos privados: recursos, tecnología y propuestas (cada segundo) |
 | `diplo:answered`   | Respuesta del otro jugador a tu propuesta          |
+| `dm:message`       | Mensaje privado (solo a remitente y destinatario)  |
 | `chat:message`     | Mensaje de chat o de sistema                       |
 | `room:kicked`      | Has sido expulsado                                 |
 | `room:closed`      | La sala se ha borrado por inactividad              |

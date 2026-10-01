@@ -1,41 +1,88 @@
-// Reglas militares compartidas por servidor y cliente: unidades, terreno, movimiento y combate.
+// Reglas militares compartidas por servidor y cliente: unidades, terreno, movimiento, combate y bombas.
 
-export const UNIT_TYPES = ['infantry', 'tank', 'aircraft', 'navy'];
-
-// Costes en recursos; mantenimiento por minuto; velocidad en unidades de mapa por segundo.
+// Cada unidad pertenece a una clase (para el terreno y el suministro) y a un dominio
+// (tierra, aire o mar, para el movimiento). Las de nivel II y III se desbloquean en el árbol tecnológico.
 export const UNITS = {
+  // Infantería
   infantry: {
-    label: 'Infantería', short: 'Inf', icon: '♟',
+    label: 'Infantería', icon: '♟', class: 'infantry', domain: 'land', tier: 1,
     cost: { money: 8, food: 3 }, upkeep: { food: 0.3 },
     attack: 1, defense: 1.5, speed: 14, trainMs: 4_000,
   },
+  mech: {
+    label: 'Infantería mecanizada', icon: '♞', class: 'infantry', domain: 'land', tier: 2,
+    cost: { money: 14, food: 3, industry: 3, oil: 1 }, upkeep: { food: 0.3, oil: 0.2 },
+    attack: 2, defense: 2.5, speed: 20, trainMs: 6_000,
+  },
+  specops: {
+    label: 'Fuerzas especiales', icon: '✪', class: 'special', domain: 'land', tier: 3,
+    cost: { money: 30, food: 5, industry: 5 }, upkeep: { food: 0.6 },
+    attack: 4, defense: 3, speed: 18, trainMs: 9_000,
+  },
+  // Blindados
   tank: {
-    label: 'Tanques', short: 'Tnq', icon: '▰',
+    label: 'Tanques', icon: '▰', class: 'armor', domain: 'land', tier: 1,
     cost: { money: 22, industry: 6, oil: 3 }, upkeep: { oil: 0.4 },
     attack: 4, defense: 3, speed: 22, trainMs: 8_000,
   },
-  aircraft: {
-    label: 'Aviación', short: 'Av', icon: '✈',
-    cost: { money: 32, industry: 10, oil: 5 }, upkeep: { oil: 0.8 },
-    attack: 5, defense: 2, speed: 60, trainMs: 12_000,
+  heavytank: {
+    label: 'Tanques pesados', icon: '▮', class: 'armor', domain: 'land', tier: 2,
+    cost: { money: 40, industry: 12, oil: 6 }, upkeep: { oil: 0.7 },
+    attack: 7, defense: 6, speed: 15, trainMs: 12_000,
   },
+  mbt: {
+    label: 'Carros de combate modernos', icon: '◆', class: 'armor', domain: 'land', tier: 3,
+    cost: { money: 60, industry: 18, oil: 8 }, upkeep: { oil: 1 },
+    attack: 10, defense: 8, speed: 26, trainMs: 15_000,
+  },
+  // Aviación
+  aircraft: {
+    label: 'Cazas', icon: '✈', class: 'air', domain: 'air', tier: 1,
+    cost: { money: 32, industry: 10, oil: 5 }, upkeep: { oil: 0.8 },
+    attack: 5, defense: 2, speed: 60, trainMs: 12_000, interceptor: 1,
+  },
+  bomber: {
+    label: 'Bombarderos', icon: '✠', class: 'air', domain: 'air', tier: 2,
+    cost: { money: 50, industry: 15, oil: 8 }, upkeep: { oil: 1.2 },
+    attack: 9, defense: 1, speed: 45, trainMs: 15_000,
+  },
+  jet: {
+    label: 'Cazas a reacción', icon: '➶', class: 'air', domain: 'air', tier: 3,
+    cost: { money: 70, industry: 20, oil: 10 }, upkeep: { oil: 1.5 },
+    attack: 8, defense: 5, speed: 90, trainMs: 18_000, interceptor: 2,
+  },
+  // Marina
   navy: {
-    label: 'Marina', short: 'Mar', icon: '⚓',
+    label: 'Destructores', icon: '⚓', class: 'naval', domain: 'sea', tier: 1,
     cost: { money: 26, industry: 8, oil: 4 }, upkeep: { oil: 0.5 },
-    attack: 3, defense: 3, speed: 24, trainMs: 12_000, coastalOnly: true,
+    attack: 3, defense: 3, speed: 24, trainMs: 12_000,
+  },
+  submarine: {
+    label: 'Submarinos', icon: '◒', class: 'naval', domain: 'sea', tier: 2,
+    cost: { money: 40, industry: 12, oil: 6 }, upkeep: { oil: 0.7 },
+    attack: 6, defense: 2, speed: 26, trainMs: 14_000,
+  },
+  carrier: {
+    label: 'Portaaviones', icon: '⛴', class: 'naval', domain: 'sea', tier: 3,
+    cost: { money: 90, industry: 30, oil: 12 }, upkeep: { oil: 2 },
+    attack: 5, defense: 8, speed: 18, trainMs: 20_000, interceptor: 1,
   },
 };
 
-// Qué recurso necesita cada unidad para rendir al 100 %.
-const SUPPLY = { infantry: 'food', tank: 'oil', aircraft: 'oil', navy: 'oil' };
+export const UNIT_TYPES = Object.keys(UNITS);
+export const BASE_UNITS = UNIT_TYPES.filter((t) => UNITS[t].tier === 1);
+
+// Qué recurso necesita cada clase para rendir al 100 %.
+const SUPPLY = { infantry: 'food', special: 'food', armor: 'oil', air: 'oil', naval: 'oil' };
 const UNSUPPLIED_FACTOR = 0.5;
 
+// Modificadores de ataque por clase (las fuerzas especiales ignoran el terreno).
 export const TERRAIN_INFO = {
   plains: { label: 'Llanura', defense: 1, attack: {} },
-  mountains: { label: 'Montaña', defense: 1.5, attack: { tank: 0.6 } },
-  jungle: { label: 'Selva', defense: 1.3, attack: { tank: 0.7, aircraft: 0.7 } },
-  desert: { label: 'Desierto', defense: 1, attack: { infantry: 0.8, tank: 1.2 } },
-  frozen: { label: 'Helado', defense: 1.4, attack: { infantry: 0.8, tank: 0.7 } },
+  mountains: { label: 'Montaña', defense: 1.5, attack: { armor: 0.6 } },
+  jungle: { label: 'Selva', defense: 1.3, attack: { armor: 0.7, air: 0.7 } },
+  desert: { label: 'Desierto', defense: 1, attack: { infantry: 0.8, armor: 1.2 } },
+  frozen: { label: 'Helado', defense: 1.4, attack: { infantry: 0.8, armor: 0.7 } },
 };
 
 const TERRAIN_GROUPS = {
@@ -58,31 +105,41 @@ export const AMPHIBIOUS_ATTACK = 0.75; // atacar desde el mar penaliza
 export const GAME_SPEEDS = { slow: 0.6, normal: 1, fast: 1.6 };
 
 export function emptyUnits() {
-  return { infantry: 0, tank: 0, aircraft: 0, navy: 0 };
+  return Object.fromEntries(UNIT_TYPES.map((t) => [t, 0]));
+}
+
+/** Completa un objeto de unidades con ceros para los tipos que falten. */
+export function normalizeUnits(units = {}) {
+  return Object.fromEntries(UNIT_TYPES.map((t) => [t, units[t] ?? 0]));
 }
 
 export function totalUnits(units) {
-  return UNIT_TYPES.reduce((sum, t) => sum + (units[t] ?? 0), 0);
+  return UNIT_TYPES.reduce((sum, t) => sum + (units?.[t] ?? 0), 0);
 }
 
 export function addUnits(target, delta, sign = 1) {
-  for (const t of UNIT_TYPES) target[t] = (target[t] ?? 0) + sign * (delta[t] ?? 0);
+  for (const t of UNIT_TYPES) target[t] = (target[t] ?? 0) + sign * (delta?.[t] ?? 0);
   return target;
+}
+
+/** Unidades de un dominio ('land', 'air', 'sea') dentro de un grupo. */
+export function domainCount(units, domain) {
+  return UNIT_TYPES.reduce((sum, t) => sum + (UNITS[t].domain === domain ? units?.[t] ?? 0 : 0), 0);
 }
 
 /** Guarnición inicial de un país neutral, según su economía y tamaño. */
 export function neutralGarrison(country, economy) {
-  return {
+  return normalizeUnits({
     infantry: 2 + 2 * economy + (country.area >= 1_000_000 ? 2 : 0),
     tank: economy >= 2 ? economy : 0,
     aircraft: economy >= 4 ? 2 : 0,
     navy: country.coastal && economy >= 3 ? 2 : 0,
-  };
+  });
 }
 
 /** Ejército inicial de cada jugador en su capital. */
 export function startingArmy(country) {
-  return { infantry: 10, tank: 3, aircraft: 1, navy: country.coastal ? 1 : 0 };
+  return normalizeUnits({ infantry: 10, tank: 3, aircraft: 1, navy: country.coastal ? 1 : 0 });
 }
 
 /**
@@ -92,9 +149,8 @@ export function startingArmy(country) {
 export function moveError(from, to, units) {
   if (!from.neighbors.includes(to.id)) return 'Solo puedes mover tropas a países vecinos';
   if (totalUnits(units) <= 0) return 'Elige al menos una unidad';
-  if (units.navy > 0 && !to.coastal) return 'La marina no puede entrar en un país sin costa';
-  const byLand = units.infantry + units.tank;
-  if (from.sea.includes(to.id) && byLand > 0 && units.navy === 0) {
+  if (domainCount(units, 'sea') > 0 && !to.coastal) return 'Los barcos no pueden entrar en un país sin costa';
+  if (from.sea.includes(to.id) && domainCount(units, 'land') > 0 && domainCount(units, 'sea') === 0) {
     return 'Para cruzar el mar con tropas de tierra necesitas al menos un barco';
   }
   return null;
@@ -102,7 +158,8 @@ export function moveError(from, to, units) {
 
 /** Duración del viaje en ms: depende de la distancia y de la unidad más lenta. */
 export function travelMs(from, to, units, speed = 1) {
-  const slowest = Math.min(...UNIT_TYPES.filter((t) => units[t] > 0).map((t) => UNITS[t].speed));
+  const present = UNIT_TYPES.filter((t) => (units[t] ?? 0) > 0);
+  const slowest = present.length ? Math.min(...present.map((t) => UNITS[t].speed)) : UNITS.infantry.speed;
   const dist = Math.hypot(to.cx - from.cx, to.cy - from.cy);
   let secs = Math.min(Math.max(dist / slowest, 3), 25);
   if (from.sea.includes(to.id)) secs *= 1.3;
@@ -113,9 +170,10 @@ function power(units, kind, { terrain = 'plains', supplied = {} } = {}) {
   let total = 0;
   for (const t of UNIT_TYPES) {
     if (!units[t]) continue;
-    let value = UNITS[t][kind] * units[t];
-    if (kind === 'attack') value *= TERRAIN_INFO[terrain].attack[t] ?? 1;
-    if (supplied[SUPPLY[t]] === false) value *= UNSUPPLIED_FACTOR;
+    const unit = UNITS[t];
+    let value = unit[kind] * units[t];
+    if (kind === 'attack') value *= TERRAIN_INFO[terrain].attack[unit.class] ?? 1;
+    if (supplied[SUPPLY[unit.class]] === false) value *= UNSUPPLIED_FACTOR;
     total += value;
   }
   return total;
@@ -125,9 +183,10 @@ function power(units, kind, { terrain = 'plains', supplied = {} } = {}) {
 function applyLosses(units, fraction, rng) {
   const left = emptyUnits();
   for (const t of UNIT_TYPES) {
-    const lost = units[t] * fraction;
+    const n = units[t] ?? 0;
+    const lost = n * fraction;
     const whole = Math.floor(lost) + (rng() < lost - Math.floor(lost) ? 1 : 0);
-    left[t] = Math.max(0, units[t] - whole);
+    left[t] = Math.max(0, n - whole);
   }
   return left;
 }
@@ -138,6 +197,8 @@ function applyLosses(units, fraction, rng) {
  * Devuelve { attackerWins, attackersLeft, defendersLeft, attackPower, defensePower }.
  */
 export function resolveBattle(attackers, defenders, ctx = {}, rng = Math.random) {
+  attackers = normalizeUnits(attackers);
+  defenders = normalizeUnits(defenders);
   const terrain = ctx.terrain ?? 'plains';
   const luck = () => 0.8 + rng() * 0.4;
 
@@ -171,4 +232,35 @@ export function resolveBattle(attackers, defenders, ctx = {}, rng = Math.random)
     attackPower,
     defensePower,
   };
+}
+
+// ---------- Bombas ----------
+
+// range: saltos de frontera desde el país propio más cercano. Las bombas se compran al lanzarlas.
+export const WEAPONS = {
+  bombing: {
+    label: 'Bombardeo convencional', icon: '💣', range: 1, flightMs: 4_000, cooldownMs: 20_000,
+    cost: { money: 40, industry: 10, oil: 10 }, kill: 0.25, levels: 0, interceptable: 1,
+  },
+  missile: {
+    label: 'Misil balístico', icon: '🚀', range: 3, flightMs: 6_000, cooldownMs: 45_000,
+    cost: { money: 90, industry: 30, oil: 15 }, kill: 0.4, levels: 1, interceptable: 0.6,
+  },
+  nuke: {
+    label: 'Bomba nuclear', icon: '☢', range: 5, flightMs: 9_000, cooldownMs: 180_000,
+    cost: { money: 300, industry: 120, oil: 60 }, kill: 0.85, levels: 4, interceptable: 0.25,
+    contaminationMs: 180_000,
+  },
+};
+export const WEAPON_TYPES = Object.keys(WEAPONS);
+
+/** Probabilidad de que las defensas aéreas del objetivo derriben el arma. */
+export function interceptChance(defenders, weapon) {
+  const shield = UNIT_TYPES.reduce((s, t) => s + (UNITS[t].interceptor ?? 0) * (defenders?.[t] ?? 0), 0);
+  return Math.min(0.75, shield * 0.06) * WEAPONS[weapon].interceptable;
+}
+
+/** Daños de un impacto: unidades que sobreviven y niveles de desarrollo perdidos. */
+export function strikeDamage(units, weapon, rng = Math.random) {
+  return { unitsLeft: applyLosses(normalizeUnits(units), WEAPONS[weapon].kill, rng), levelsLost: WEAPONS[weapon].levels };
 }

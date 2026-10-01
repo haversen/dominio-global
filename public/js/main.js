@@ -60,6 +60,7 @@ function setRoom(room) {
 function enterRoom(res) {
   state.me = res.you;
   state.self = res.self ?? null;
+  gameView.diplo.loadDirect(res.dms);
   resetChat(res.chat);
   setRoom(res.room);
   history.replaceState(null, '', `?code=${res.room.code}`);

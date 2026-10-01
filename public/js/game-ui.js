@@ -1,16 +1,17 @@
 // Pantalla de partida (tiempo real): mapa, recursos, ejércitos, jugadores y panel del país seleccionado.
 
 import { WorldMap } from './map.js';
-import { $, h, toast } from './dom.js';
+import { $, h, toast, guardTaps } from './dom.js';
 import { request } from './net.js';
 import {
   RESOURCES, RESOURCE_INFO, MAX_LEVEL, countryIncome, developCost, canAfford,
 } from '/shared/economy.js';
 import {
   UNITS, UNIT_TYPES, TERRAIN_INFO, terrainOf, totalUnits, moveError, travelMs, emptyUnits,
+  WEAPONS, WEAPON_TYPES,
 } from '/shared/military.js';
 import { RELATIONS, relationOf } from '/shared/diplomacy.js';
-import { techBonus } from '/shared/tech.js';
+import { techBonus, isUnlocked } from '/shared/tech.js';
 import { DiplomacyView, rankingTable } from './diplomacy-ui.js';
 import { VICTORY_REASONS } from '/shared/score.js';
 import { play } from './sound.js';
@@ -83,14 +84,10 @@ export class GameView {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.map && document.activeElement?.tagName !== 'INPUT') this.#focus(null);
     });
-    // Mientras se pulsa dentro del panel no se redibuja, para que ningún clic se pierda.
-    this.panelPressed = false;
-    $('#country-panel').addEventListener('pointerdown', () => { this.panelPressed = true; });
-    window.addEventListener('pointerup', () => {
-      if (!this.panelPressed) return;
-      this.panelPressed = false;
-      setTimeout(() => this.#renderPanel(), 0); // después del click
-    });
+    // Mientras se pulsa dentro del panel no se redibuja, para que ningún toque se pierda.
+    this.panelGuard = guardTaps($('#country-panel'), () => this.#renderPanel());
+    // En el móvil, el panel es una hoja que se desliza desde abajo.
+    $('#sheet-handle').addEventListener('click', () => this.#setSheet(!$('#side-panel').classList.contains('open')));
     // Cuentas atrás y reloj de partida.
     setInterval(() => this.#tickClock(), 250);
   }
@@ -276,13 +273,27 @@ export class GameView {
       }
     }
 
+    const now = this.#serverNow();
+    for (const [countryId, c] of Object.entries(game.countries)) {
+      if (c.contaminatedUntil > now) (classes[countryId] ??= []).push('contaminated');
+    }
+
     this.map.update({ colors, markers, dimmed, classes, badges });
-    this.map.setArmies(game.armies.map((a) => ({
-      ...a,
-      color: players.get(a.owner)?.color ?? NEUTRAL_COLOR,
-      count: totalUnits(a.units),
-      mine: a.owner === me,
-    })));
+    this.map.setArmies([
+      ...game.armies.map((a) => ({
+        ...a,
+        color: players.get(a.owner)?.color ?? NEUTRAL_COLOR,
+        count: totalUnits(a.units),
+        mine: a.owner === me,
+      })),
+      ...(game.strikes ?? []).map((s) => ({
+        ...s,
+        color: '#ff4d3d',
+        count: WEAPONS[s.weapon].icon,
+        mine: s.owner === me,
+        kind: 'strike',
+      })),
+    ]);
   }
 
   // Batallas nuevas: destello en el mapa y aviso si nos afectan.
@@ -295,12 +306,17 @@ export class GameView {
     }
     for (const e of events) {
       if (e.id <= this.lastEventId) continue;
+      if (e.type === 'strike') {
+        this.#strikeEvent(e, players, me);
+        continue;
+      }
       if (e.type === 'eliminated') {
         const name = players.get(e.player)?.name ?? 'Un jugador';
         if (e.player === me) play('defeat');
         toast(e.player === me ? 'Has sido eliminado' : `${name} ha sido eliminado`, e.player === me ? 'error' : 'info', 5000);
         continue;
       }
+      if (e.type !== 'battle') continue;
       this.map.flash(e.country, e.attackerWins ? 'conquest' : 'repelled');
       const country = world.byId.get(e.country).name;
       const attacker = players.get(e.attacker)?.name ?? 'Alguien';
@@ -320,32 +336,58 @@ export class GameView {
     this.lastEventId = latest;
   }
 
+  #strikeEvent(e, players, me) {
+    const spec = WEAPONS[e.weapon];
+    const country = world.byId.get(e.country).name;
+    this.map.flash(e.country, e.intercepted ? 'repelled' : e.weapon === 'nuke' ? 'nuke' : 'conquest');
+    if (!e.intercepted) play(e.weapon === 'nuke' ? 'lost' : 'battle');
+    const losses = totalUnits(e.losses);
+    if (e.attacker === me) {
+      toast(e.intercepted ? `Tu ${spec.label.toLowerCase()} sobre ${country} ha sido interceptado`
+        : `${spec.icon} Impacto en ${country}: ${losses} unidades destruidas`, e.intercepted ? 'error' : 'success', 4500);
+    } else if (e.defender === me) {
+      const who = players.get(e.attacker)?.name ?? 'Alguien';
+      toast(e.intercepted ? `🛡 Tus defensas interceptan el ataque de ${who} sobre ${country}`
+        : `${spec.icon} ${who} ha bombardeado ${country}: pierdes ${losses} unidades`, e.intercepted ? 'success' : 'error', 5000);
+    }
+  }
+
   // Alerta en tiempo real: un ejército ajeno se dirige a uno de tus países.
   #warnIncoming({ game, players, me }) {
     const first = this.seenArmies === null;
     this.seenArmies ??= new Set();
     let alarm = false;
-    for (const a of game.armies) {
+    const incoming = [...game.armies, ...(game.strikes ?? [])];
+    for (const a of incoming) {
       if (this.seenArmies.has(a.id)) continue;
       this.seenArmies.add(a.id);
       if (first || a.owner === me || game.countries[a.to]?.owner !== me) continue;
       if (a.owner && relationOf(game.relations, me, a.owner).state === 'alliance') continue; // refuerzo aliado
       const who = a.owner ? players.get(a.owner)?.name ?? 'Un jugador' : 'Las fuerzas neutrales';
       const secs = Math.max(1, Math.round((a.arriveAt - this.#serverNow()) / 1000));
-      toast(`⚠ ${who} avanza hacia ${world.byId.get(a.to).name} con ${totalUnits(a.units)} unidades · llega en ${secs} s`, 'error', 5000);
+      const target = world.byId.get(a.to).name;
+      toast(a.weapon
+        ? `${WEAPONS[a.weapon].icon} ¡${who} ha lanzado ${WEAPONS[a.weapon].label.toLowerCase()} contra ${target}! Impacto en ${secs} s`
+        : `⚠ ${who} avanza hacia ${target} con ${totalUnits(a.units)} unidades · llega en ${secs} s`, 'error', 5000);
       alarm = true;
     }
     if (alarm) play('alarm');
-    // Olvida los ejércitos que ya llegaron.
-    const live = new Set(game.armies.map((a) => a.id));
+    // Olvida los ejércitos y bombas que ya llegaron.
+    const live = new Set(incoming.map((a) => a.id));
     for (const id of this.seenArmies) if (!live.has(id)) this.seenArmies.delete(id);
   }
 
   // ---------- Panel lateral ----------
 
+  #setSheet(open) {
+    $('#side-panel').classList.toggle('open', open);
+  }
+
   #select(id) {
     if (id !== this.selected) this.sendUnits = null;
     this.selected = id;
+    $('#sheet-title').textContent = id ? world.byId.get(id).name : 'Panel y chat';
+    if (id) this.#setSheet(true);
     const ctx = this.#ctx();
     if (ctx) this.#renderMap(ctx); // resalta los vecinos del nuevo país
     this.#renderPanel();
@@ -359,7 +401,7 @@ export class GameView {
 
   #renderPanel() {
     const ctx = this.#ctx();
-    if (!ctx || this.panelPressed) return;
+    if (!ctx || this.panelGuard.isPressed()) return;
     const { game, players, me, self } = ctx;
     const panel = $('#country-panel');
     const picking = game.phase === 'picking';
@@ -408,12 +450,15 @@ export class GameView {
         h('dt', {}, 'Terreno'), h('dd', { title: `Defensa ×${terrain.defense}` }, `${terrain.label}${c.coastal ? ' · costa' : ''}`),
         h('dt', {}, 'Desarrollo'), h('dd', {}, this.#levelPips(state.level)),
         state.developing && h('dt', {}, 'En obras'),
-        state.developing && h('dd', {}, `nivel ${state.developing.toLevel} en ${secondsText(state.developing.readyAt - now)}`)),
+        state.developing && h('dd', {}, `nivel ${state.developing.toLevel} en ${secondsText(state.developing.readyAt - now)}`),
+        state.contaminatedUntil > now && h('dt', { class: 'danger-text' }, '☢ Contaminado'),
+        state.contaminatedUntil > now && h('dd', { class: 'danger-text' }, `sin producción ${secondsText(state.contaminatedUntil - now)}`)),
       game.phase === 'active' && this.#armySection(state, now),
       this.#movesSection(c, ctx, now),
       isMine && this.#recruitSection(c, ctx),
       isMine && this.#sendSection(c, state, ctx),
       !isMine && game.phase === 'active' && this.#attackFromSection(c, ctx),
+      !isMine && game.phase === 'active' && this.#strikeSection(c, ctx, now),
       h('h4', { class: 'panel-sub' }, 'Producción por minuto'),
       this.#resourceGrid(countryIncome(c, state.level, Boolean(homeOf))),
       homeOf && h('p', { class: 'muted small' }, 'Incluye la bonificación de capital.'),
@@ -440,7 +485,8 @@ export class GameView {
     }
     return h('div', {},
       h('h4', { class: 'panel-sub' }, `Ejército · ${totalUnits(state.units)} unidades`),
-      h('div', { class: 'unit-grid' }, UNIT_TYPES.map((t) => h('div', {
+      totalUnits(state.units) === 0 && !state.training.length && h('p', { class: 'muted small' }, 'Sin tropas.'),
+      h('div', { class: 'unit-grid' }, UNIT_TYPES.filter((t) => state.units[t] > 0 || training[t]).map((t) => h('div', {
         class: 'unit',
         title: `${UNITS[t].label}: ataque ${UNITS[t].attack}, defensa ${UNITS[t].defense}`,
       },
@@ -467,11 +513,14 @@ export class GameView {
   }
 
   #recruitSection(c, { self }) {
+    const available = UNIT_TYPES.filter((t) => isUnlocked(self?.unlocked, { unit: t }));
+    const locked = UNIT_TYPES.length - available.length;
     return h('div', {},
       h('h4', { class: 'panel-sub' }, 'Reclutar'),
-      h('div', { class: 'recruit-list' }, UNIT_TYPES.map((t) => {
+      locked > 0 && h('p', { class: 'muted small' }, `🔬 Investiga en Tecnología para desbloquear ${locked} tipos de tropa más.`),
+      h('div', { class: 'recruit-list' }, available.map((t) => {
         const unit = UNITS[t];
-        const blocked = unit.coastalOnly && !c.coastal;
+        const blocked = unit.domain === 'sea' && !c.coastal;
         const buy = (n) => {
           const cost = Object.fromEntries(Object.entries(unit.cost).map(([r, v]) => [r, v * n]));
           const ok = !blocked && self && canAfford(self.resources, cost);
@@ -492,6 +541,62 @@ export class GameView {
           h('span', { class: 'recruit-name' }, unit.label, h('small', {}, blocked ? 'requiere costa' : costText(unit.cost))),
           buy(1), buy(5));
       })));
+  }
+
+  // Bombas disponibles contra un país ajeno.
+  #strikeSection(c, { game, me, self, players }, now) {
+    const weapons = WEAPON_TYPES.filter((w) => isUnlocked(self?.unlocked, { weapon: w }));
+    if (!weapons.length) return null;
+    const owner = game.countries[c.id].owner;
+    const rel = owner ? relationOf(game.relations, me, owner).state : 'war';
+    const hops = this.#hopsToMine(game, me, c.id);
+
+    return h('div', {},
+      h('h4', { class: 'panel-sub' }, 'Bombardear'),
+      h('div', { class: 'recruit-list' }, weapons.map((w) => {
+        const spec = WEAPONS[w];
+        const cooldown = (self.cooldowns?.[w] ?? 0) - now;
+        let error = null;
+        if (rel !== 'war') error = `No estás en guerra con ${players.get(owner)?.name}`;
+        else if (hops > spec.range) error = `Fuera de alcance (máx. ${spec.range} países)`;
+        else if (cooldown > 0) error = `Recargando: ${secondsText(cooldown)}`;
+        else if (!canAfford(self.resources, spec.cost)) error = 'No tienes recursos suficientes';
+        return h('div', { class: 'recruit-row' },
+          h('span', { class: 'unit-icon' }, spec.icon),
+          h('span', { class: 'recruit-name' }, spec.label,
+            h('small', {}, error ?? `${costText(spec.cost)} · destruye ${Math.round(spec.kill * 100)} %`)),
+          h('button', {
+            class: `btn btn-xs ${w === 'nuke' ? 'btn-danger' : ''}`,
+            disabled: Boolean(error),
+            onClick: async () => {
+              if (w === 'nuke' && !confirm(`¿Lanzar una bomba nuclear contra ${c.name}? Todos los jugadores serán avisados.`)) return;
+              const res = await request('game:strike', { weapon: w, countryId: c.id });
+              if (!res.ok) return toast(res.error, 'error');
+              play('march');
+              toast(`${spec.icon} Lanzado contra ${c.name} · impacto en ${secondsText(res.arriveAt - this.#serverNow())}`);
+            },
+          }, 'Lanzar'));
+      })));
+  }
+
+  // Distancia en fronteras desde el país propio más cercano.
+  #hopsToMine(game, me, targetId) {
+    const seen = new Set([targetId]);
+    let frontier = [targetId];
+    for (let hops = 0; frontier.length && hops < 10; hops++) {
+      if (frontier.some((id) => game.countries[id].owner === me)) return hops;
+      const next = [];
+      for (const id of frontier) {
+        for (const n of world.byId.get(id).neighbors) {
+          if (!seen.has(n)) {
+            seen.add(n);
+            next.push(n);
+          }
+        }
+      }
+      frontier = next;
+    }
+    return Infinity;
   }
 
   #defaultSend(units) {
@@ -551,7 +656,7 @@ export class GameView {
         h('span', {}, `${own ? '➜' : '⚔'} ${target.name}`),
         h('small', {}, detail));
       })),
-      h('p', { class: 'muted small' }, 'Atajo: clic derecho sobre un país vecino en el mapa.'));
+      h('p', { class: 'muted small hint-desktop' }, 'Atajo: clic derecho sobre un país vecino en el mapa.'));
   }
 
   // En un país ajeno: desde qué países tuyos puedes atacarlo.

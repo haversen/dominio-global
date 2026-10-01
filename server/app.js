@@ -159,6 +159,7 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
         room: rooms.toPublic(room),
         self: rooms.privateState(room, player.id),
         chat: room.chat,
+        dms: rooms.directHistory(room, player.id),
       };
     };
 
@@ -252,6 +253,27 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
       const { room, player } = current();
       rooms.research(room, player, tech);
       broadcastRoom(room);
+    });
+
+    handle('game:researchNode', ({ node }) => {
+      const { room, player } = current();
+      rooms.researchNode(room, player, node);
+      broadcastRoom(room);
+    });
+
+    handle('game:strike', ({ weapon, countryId }) => {
+      const { room, player } = current();
+      const strike = rooms.launchStrike(room, player, weapon, countryId);
+      broadcastRoom(room);
+      return { arriveAt: strike.arriveAt };
+    });
+
+    // Mensaje privado: llega solo al destinatario (y al remitente, para su historial).
+    handle('dm:send', ({ playerId, text }) => {
+      const { room, player } = current();
+      const { msg, target } = rooms.sendDirect(room, player, playerId, text);
+      socket.emit('dm:message', msg);
+      if (target.socketId) io.to(target.socketId).emit('dm:message', msg);
     });
 
     handle('diplo:war', ({ playerId }) => {

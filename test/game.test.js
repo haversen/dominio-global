@@ -545,3 +545,87 @@ test('red: el formato compacto de los países se decodifica sin pérdidas', () =
   }
   assert.ok(JSON.stringify(encodeCountries(game.countries)).length < JSON.stringify(game.countries).length / 3);
 });
+
+// ---------- Árbol tecnológico y bombas ----------
+
+import { researchNode, launchStrike } from '../server/game.js';
+import { TECH_TREE } from '../shared/tech.js';
+import { WEAPONS, UNITS as ALL_UNITS } from '../shared/military.js';
+
+function richGame(homes = { a: 'ESP', b: 'JPN' }) {
+  const game = gameWithHomes(homes);
+  for (const p of Object.values(game.players)) {
+    p.resources = { money: 100_000, food: 100_000, oil: 100_000, industry: 100_000 };
+  }
+  return game;
+}
+
+test('árbol: las tropas avanzadas exigen investigar la rama en orden', () => {
+  const game = richGame();
+  assert.match(recruit(game, 'a', 'ESP', 'heavytank', 1, T0), /investigar/);
+  assert.match(researchNode(game, 'a', 'arm3', T0), /anterior/);
+  assert.equal(researchNode(game, 'a', 'arm2', T0), null);
+  assert.match(researchNode(game, 'a', 'inf2', T0), /otra/, 'una investigación a la vez');
+
+  tickGame(game, ['a', 'b'], T0 + TECH_TREE.arm2.ms);
+  assert.ok(game.players.a.unlocked.includes('arm2'));
+  assert.equal(recruit(game, 'a', 'ESP', 'heavytank', 2, T0 + TECH_TREE.arm2.ms), null);
+  assert.match(researchNode(game, 'a', 'arm2', T0), /Ya está/);
+  assert.match(recruit(game, 'b', 'JPN', 'heavytank', 1, T0), /investigar/, 'cada jugador investiga lo suyo');
+});
+
+test('árbol: las unidades nuevas son más fuertes y los barcos necesitan costa', () => {
+  assert.ok(ALL_UNITS.mbt.attack > ALL_UNITS.heavytank.attack && ALL_UNITS.heavytank.attack > ALL_UNITS.tank.attack);
+  assert.ok(ALL_UNITS.jet.speed > ALL_UNITS.aircraft.speed);
+  const game = richGame({ a: 'CHE', b: 'JPN' });
+  game.players.a.unlocked.push('sea2');
+  assert.match(recruit(game, 'a', 'CHE', 'submarine', 1, T0), /costa/);
+});
+
+test('bombas: requieren investigación, guerra, alcance y recarga', () => {
+  const game = richGame();
+  game.countries.FRA.owner = 'b';
+  assert.match(launchStrike(game, 'a', 'bombing', 'FRA', T0).error, /investigar/);
+  game.players.a.unlocked.push('bomb1', 'bomb2');
+  assert.match(launchStrike(game, 'a', 'bombing', 'FRA', T0).error, /guerra/);
+  declareWar(game, 'a', 'b', T0);
+  assert.match(launchStrike(game, 'a', 'bombing', 'POL', T0).error, /alcance/);
+
+  const { strike } = launchStrike(game, 'a', 'bombing', 'FRA', T0);
+  assert.equal(strike.from, 'ESP');
+  assert.match(launchStrike(game, 'a', 'bombing', 'FRA', T0 + 1000).error, /recargando/);
+  assert.equal(launchStrike(game, 'a', 'missile', 'POL', T0).error, undefined, 'el misil llega más lejos');
+  assert.match(launchStrike(game, 'a', 'bombing', 'ESP', T0 + 60_000).error, /propios/);
+});
+
+test('bombas: el impacto destruye tropas e infraestructura; los cazas pueden interceptar', () => {
+  const game = richGame();
+  game.players.a.unlocked.push('bomb1', 'bomb2', 'bomb3');
+  const fra = game.countries.FRA;
+  fra.units = normalizeTest({ infantry: 20, tank: 10 });
+  fra.level = 4;
+  const { strike } = launchStrike(game, 'a', 'nuke', 'FRA', T0);
+  const result = tickGame(game, ['a', 'b'], strike.arriveAt, fixedRng(0.99)); // 0.99: sin intercepción
+  const hit = result.events.find((e) => e.type === 'strike');
+  assert.equal(hit.intercepted, false);
+  assert.ok(totalUnits(fra.units) <= 30 * (1 - WEAPONS.nuke.kill) + 1);
+  assert.equal(fra.level, 1);
+  assert.ok(fra.contaminatedUntil > strike.arriveAt, 'queda contaminado');
+
+  // Un país propio contaminado no produce.
+  game.countries.FRA.owner = 'a';
+  const before = incomeFor(game, 'a').money;
+  delete game.countries.FRA.contaminatedUntil;
+  assert.ok(incomeFor(game, 'a').money > before);
+
+  // Con muchos cazas, un bombardeo puede ser interceptado.
+  game.countries.PRT.units = normalizeTest({ aircraft: 30 });
+  const s2 = launchStrike(game, 'a', 'bombing', 'PRT', T0).strike;
+  const r2 = tickGame(game, ['a', 'b'], s2.arriveAt, fixedRng(0));
+  assert.equal(r2.events.find((e) => e.type === 'strike').intercepted, true);
+  assert.equal(game.countries.PRT.units.aircraft, 30);
+});
+
+function normalizeTest(units) {
+  return Object.fromEntries(Object.keys(ALL_UNITS).map((t) => [t, units[t] ?? 0]));
+}

@@ -3,7 +3,7 @@
 //   2. envían refuerzos a un vecino neutral cuando ven tropas enemigas acercándose,
 //   3. contraatacan países de jugadores con fronteras débiles.
 
-import { UNITS, UNIT_TYPES, emptyUnits, totalUnits, travelMs } from '../shared/military.js';
+import { UNITS, UNIT_TYPES, emptyUnits, totalUnits, travelMs, domainCount } from '../shared/military.js';
 
 export const AI_LEVELS = {
   passive: { regenMs: 40_000, reinforce: false, counter: null, revengeOnly: true },
@@ -96,9 +96,9 @@ export function tickAI(game, COUNTRIES, now) {
       for (const n of COUNTRIES.get(id).neighbors) {
         const attacker = game.countries[n];
         if (attacker.owner !== null || (ai.cooldowns[n] ?? 0) > now) continue;
-        if (COUNTRIES.get(id).sea.includes(n) && attacker.units.navy === 0) continue;
+        if (COUNTRIES.get(id).sea.includes(n) && domainCount(attacker.units, 'sea') === 0) continue;
         const units = { ...attacker.units, infantry: Math.max(0, attacker.units.infantry - KEEP_INFANTRY) };
-        if (!COUNTRIES.get(id).coastal) units.navy = 0;
+        if (!COUNTRIES.get(id).coastal) for (const t of UNIT_TYPES) if (UNITS[t].domain === 'sea') units[t] = 0;
         if (totalUnits(units) === 0 || power(units, 'attack') < cfg.counter * defense) continue;
         for (const t of UNIT_TYPES) attacker.units[t] -= units[t];
         ai.cooldowns[n] = now + ATTACK_COOLDOWN_MS;

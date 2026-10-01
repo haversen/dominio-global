@@ -192,7 +192,7 @@ export class WorldMap {
     }
   }
 
-  /** armies: [{ id, from, to, departAt, arriveAt, color, count, mine }] */
+  /** armies: [{ id, from, to, departAt, arriveAt, color, count, mine, kind? }] (kind 'strike' = bomba) */
   setArmies(armies) {
     this.armies = armies;
     const ids = new Set(armies.map((a) => a.id));
@@ -209,9 +209,9 @@ export class WorldMap {
       const to = this.byId.get(a.to);
       const route = svg('line', {
         x1: from.cx, y1: from.cy, x2: to.cx, y2: to.cy,
-        class: `army-route${a.mine ? ' mine' : ''}`, stroke: a.color,
+        class: `army-route${a.mine ? ' mine' : ''}${a.kind === 'strike' ? ' strike' : ''}`, stroke: a.color,
       });
-      const token = svg('g', { class: 'army' });
+      const token = svg('g', { class: `army${a.kind === 'strike' ? ' strike' : ''}` });
       const inner = svg('g', { class: 'army-scale' });
       const label = svg('text', { y: 0.5 });
       label.textContent = a.count;
@@ -247,10 +247,14 @@ export class WorldMap {
     if (!c) return;
     const g = svg('g', { transform: `translate(${c.cx} ${c.cy})` });
     const inner = svg('g', { transform: this.#markerScale() });
-    inner.append(svg('circle', { r: 26, class: `blast blast-${kind}` }), svg('circle', { r: 12, class: `blast-core blast-${kind}` }));
+    const size = kind === 'nuke' ? 3 : 1;
+    inner.append(
+      svg('circle', { r: 26 * size, class: `blast blast-${kind}` }),
+      svg('circle', { r: 12 * size, class: `blast-core blast-${kind}` }),
+    );
     g.append(inner);
     this.fxLayer.append(g);
-    setTimeout(() => g.remove(), 1300);
+    setTimeout(() => g.remove(), kind === 'nuke' ? 2600 : 1300);
   }
 
   #markerScale() {

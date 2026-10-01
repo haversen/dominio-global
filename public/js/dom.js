@@ -44,3 +44,51 @@ export async function copyText(text) {
     return ok;
   }
 }
+
+/**
+ * Zona con botones que se redibuja a menudo (llega estado nuevo cada segundo).
+ * - Mientras el dedo o el ratón está pulsado dentro, isPressed() es true para no redibujar.
+ * - Se libera también si el navegador cancela el toque (p. ej. al desplazar), para no quedarse bloqueada.
+ * - En pantallas táctiles, el botón se activa al levantar el dedo, aunque el navegador
+ *   no llegue a generar el «click» porque el botón se ha redibujado.
+ */
+export function guardTaps(el, onRelease) {
+  let pressed = false;
+  let down = null;
+  let lastSynthetic = 0;
+  let safety = null;
+
+  const release = () => {
+    if (!pressed) return;
+    pressed = false;
+    down = null;
+    clearTimeout(safety);
+    setTimeout(onRelease, 0);
+  };
+
+  el.addEventListener('pointerdown', (e) => {
+    pressed = true;
+    down = { button: e.target.closest('button'), x: e.clientX, y: e.clientY, type: e.pointerType };
+    clearTimeout(safety);
+    safety = setTimeout(release, 3000); // nunca bloquear más de 3 s
+  });
+  el.addEventListener('pointerup', (e) => {
+    if (down?.type !== 'mouse' && down?.button && !down.button.disabled
+        && e.target.closest('button') === down.button
+        && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12) {
+      lastSynthetic = Date.now();
+      down.button.click();
+    }
+  });
+  // Evita el doble disparo cuando el navegador sí genera su propio click tras el toque.
+  el.addEventListener('click', (e) => {
+    if (e.isTrusted && Date.now() - lastSynthetic < 700) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
+  window.addEventListener('pointerup', release);
+  window.addEventListener('pointercancel', release);
+  window.addEventListener('touchcancel', release);
+  return { isPressed: () => pressed };
+}

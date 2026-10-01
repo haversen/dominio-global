@@ -2,8 +2,10 @@
 
 import { RESOURCES } from '../shared/economy.js';
 import { totalUnits } from '../shared/military.js';
-import { TECH_TYPES } from '../shared/tech.js';
+import { TECH_TYPES, startingUnlocks } from '../shared/tech.js';
 import { scoreOf } from '../shared/score.js';
+
+const FREE_NODES = startingUnlocks().length;
 
 /** Clasificación actual, de mayor a menor puntuación. */
 export function standings(game, COUNTRIES, totalArea) {
@@ -16,7 +18,8 @@ export function standings(game, COUNTRIES, totalArea) {
       area: 0,
       development: 0,
       units: 0,
-      techLevels: TECH_TYPES.reduce((s, t) => s + (p.tech?.[t] ?? 0), 0),
+      // Doctrinas + nodos del árbol investigados (sin contar los que vienen de serie).
+      techLevels: TECH_TYPES.reduce((s, t) => s + (p.tech?.[t] ?? 0), 0) + Math.max(0, (p.unlocked?.length ?? 0) - FREE_NODES),
       resources: RESOURCES.reduce((s, r) => s + p.resources[r], 0),
       stats: p.stats,
     };
