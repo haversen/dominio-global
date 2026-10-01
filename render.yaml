@@ -1,0 +1,12 @@
+# Despliegue en Render (https://render.com): New → Blueprint → elige este repositorio.
+services:
+  - type: web
+    name: dominio-global
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

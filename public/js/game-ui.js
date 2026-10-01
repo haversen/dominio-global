@@ -1,0 +1,787 @@
+// Pantalla de partida (tiempo real): mapa, recursos, ejércitos, jugadores y panel del país seleccionado.
+
+import { WorldMap } from './map.js';
+import { $, h, toast } from './dom.js';
+import { request } from './net.js';
+import {
+  RESOURCES, RESOURCE_INFO, MAX_LEVEL, countryIncome, developCost, canAfford,
+} from '/shared/economy.js';
+import {
+  UNITS, UNIT_TYPES, TERRAIN_INFO, terrainOf, totalUnits, moveError, travelMs, emptyUnits,
+} from '/shared/military.js';
+import { RELATIONS, relationOf } from '/shared/diplomacy.js';
+import { techBonus } from '/shared/tech.js';
+import { DiplomacyView, rankingTable } from './diplomacy-ui.js';
+import { VICTORY_REASONS } from '/shared/score.js';
+import { play } from './sound.js';
+
+const NEUTRAL_COLOR = '#56614f';
+const NEUTRAL_BADGE = '#3a4437';
+const fmt = new Intl.NumberFormat('es-ES');
+const fmt1 = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 });
+
+let world = null;
+let worldPromise = null;
+
+// Como replaceChildren, pero ignorando los hijos condicionales que valen false/null.
+const fill = (el, ...children) => el.replaceChildren(...children.filter((c) => c != null && c !== false));
+
+const costText = (cost) => Object.entries(cost)
+  .map(([r, v]) => `${fmt.format(v)} ${RESOURCE_INFO[r].label.toLowerCase()}`).join(' + ');
+
+const secondsText = (ms) => {
+  const secs = Math.max(0, Math.ceil(ms / 1000));
+  return secs >= 60 ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : `${secs} s`;
+};
+
+export function loadWorld() {
+  worldPromise ??= fetch('/shared/world.json')
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    })
+    .then((data) => {
+      world = data;
+      world.byId = new Map(data.countries.map((c) => [c.id, c]));
+      return world;
+    });
+  return worldPromise;
+}
+
+export class GameView {
+  constructor(getState) {
+    this.getState = getState;
+    this.map = null;
+    this.selected = null;
+    this.clockOffset = 0;
+    this.centeredHome = false;
+    this.lastRoom = null;
+    this.lastEventId = null;
+    this.shownResources = null;
+    this.sendUnits = null; // unidades elegidas para enviar desde el país seleccionado
+    this.#buildResourceBar();
+    this.diplo = new DiplomacyView({ getCtx: () => this.#ctx(), serverNow: () => this.#serverNow() });
+    this.endShownFor = null; // resultado ya mostrado (para no reabrirlo en cada actualización)
+    this.seenArmies = null;  // ejércitos ya vistos, para avisar de ataques nuevos
+    // Tras el final ya no llegan actualizaciones periódicas: la ventana y el aviso se alternan aquí.
+    const showResults = (visible) => {
+      $('#end-screen').classList.toggle('hidden', !visible);
+      $('#ended-banner').classList.toggle('hidden', visible);
+    };
+    this.showResults = showResults;
+    $('#btn-show-results').addEventListener('click', () => showResults(true));
+
+    $('#btn-zoom-in').addEventListener('click', () => this.map?.zoomBy(1.6));
+    $('#btn-zoom-out').addEventListener('click', () => this.map?.zoomBy(1 / 1.6));
+    $('#btn-zoom-reset').addEventListener('click', () => this.map?.reset());
+    $('#btn-zoom-home').addEventListener('click', () => {
+      const ctx = this.#ctx();
+      const target = ctx && (ctx.game.homes[ctx.me] ?? this.#myCountries(ctx)[0]);
+      if (target) this.#focus(target);
+      else toast('No tienes ningún país');
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.map && document.activeElement?.tagName !== 'INPUT') this.#focus(null);
+    });
+    // Mientras se pulsa dentro del panel no se redibuja, para que ningún clic se pierda.
+    this.panelPressed = false;
+    $('#country-panel').addEventListener('pointerdown', () => { this.panelPressed = true; });
+    window.addEventListener('pointerup', () => {
+      if (!this.panelPressed) return;
+      this.panelPressed = false;
+      setTimeout(() => this.#renderPanel(), 0); // después del click
+    });
+    // Cuentas atrás y reloj de partida.
+    setInterval(() => this.#tickClock(), 250);
+  }
+
+  async show() {
+    try {
+      await loadWorld();
+    } catch {
+      toast('No se pudo cargar el mapa. Recarga la página.', 'error');
+      return;
+    }
+    if (!this.map) {
+      this.map = new WorldMap({
+        svgEl: $('#map'),
+        minimapEl: $('#minimap'),
+        tooltipEl: $('#map-tooltip'),
+        world,
+        now: () => this.#serverNow(),
+        onSelect: (id) => this.#select(id),
+        onContext: (id) => this.#quickMove(id),
+        tooltipText: (id) => this.#tooltip(id),
+      });
+    }
+    this.render();
+  }
+
+  /** Al salir de la partida, se olvida la selección y la vista. */
+  reset() {
+    this.selected = null;
+    this.centeredHome = false;
+    this.lastRoom = null;
+    this.lastEventId = null;
+    this.shownResources = null;
+    this.sendUnits = null;
+    this.seenArmies = null;
+    this.map?.select(null);
+    this.map?.setArmies([]);
+    this.map?.reset();
+    this.diplo.reset();
+    this.endShownFor = null;
+    $('#end-screen').classList.add('hidden');
+  }
+
+  render() {
+    const ctx = this.#ctx();
+    if (!ctx || !this.map) return;
+    const { room, game, me } = ctx;
+    // Solo cuando llega un estado público nuevo: reloj, mapa, jugadores y batallas.
+    if (room !== this.lastRoom) {
+      this.lastRoom = room;
+      this.clockOffset = room.serverTime - Date.now();
+      this.#renderPlayers(ctx);
+      this.#renderMap(ctx);
+      this.#handleEvents(ctx);
+      this.#warnIncoming(ctx);
+    }
+
+    $('#game-code').textContent = room.code;
+    this.#renderResources();
+
+    const picking = game.phase === 'picking';
+    $('#pick-banner').classList.toggle('hidden', !picking);
+    if (picking) {
+      const done = Object.keys(game.picks).length;
+      $('#pick-status').textContent = `${done} de ${ctx.players.size} han elegido`;
+    }
+    const ended = game.phase === 'ended';
+    $('#eliminated-banner').classList.toggle('hidden', !game.eliminated?.[me] || ended);
+    $('#ended-banner').classList.toggle('hidden', !ended || !$('#end-screen').classList.contains('hidden'));
+    if (ended) this.#renderEnd(ctx);
+
+    // Al empezar la partida, la cámara viaja a tu país.
+    const home = game.homes[me];
+    if (game.phase === 'active' && home && !this.centeredHome) {
+      this.centeredHome = true;
+      this.#focus(home, 3);
+      toast(`Tu país: ${world.byId.get(home).name}`, 'success');
+    }
+
+    this.#renderPanel();
+    this.diplo.render();
+    this.#tickClock();
+  }
+
+  // ---------- Datos derivados ----------
+
+  #ctx() {
+    const { room, me, self } = this.getState();
+    if (!room?.game || !world) return null;
+    return { room, game: room.game, me, self, players: new Map(room.players.map((p) => [p.id, p])) };
+  }
+
+  #serverNow() {
+    return Date.now() + this.clockOffset;
+  }
+
+  #myCountries({ game, me }) {
+    return Object.entries(game.countries).filter(([, c]) => c.owner === me).map(([id]) => id);
+  }
+
+  /** Igual que en el servidor: ocupado por otro jugador o vecino de uno de sus países. */
+  #blockedFor(game, playerId, countryId) {
+    for (const [pid, taken] of Object.entries({ ...game.picks, ...game.homes })) {
+      if (pid === playerId) continue;
+      if (taken === countryId || world.byId.get(taken).neighbors.includes(countryId)) return true;
+    }
+    return false;
+  }
+
+  #ownerOf(game, players, countryId) {
+    return players.get(game.countries[countryId]?.owner) ?? null;
+  }
+
+  #pickerOf(game, players, countryId) {
+    const entry = Object.entries(game.picks).find(([, cid]) => cid === countryId);
+    return entry ? players.get(entry[0]) ?? null : null;
+  }
+
+  // ---------- Mapa y barra de jugadores ----------
+
+  #renderPlayers({ game, players, me }) {
+    const counts = {};
+    for (const c of Object.values(game.countries)) if (c.owner) counts[c.owner] = (counts[c.owner] ?? 0) + 1;
+
+    $('#game-players').replaceChildren(...[...players.values()].map((p) => h('button', {
+      class: `player-chip${p.connected ? '' : ' offline'}${p.id === me ? ' me' : ''}${game.eliminated?.[p.id] ? ' eliminated' : ''}`,
+      title: game.eliminated?.[p.id] ? `${p.name} ha sido eliminado` : `Ir al país de ${p.name}`,
+      onClick: () => {
+        const target = game.homes[p.id] ?? game.picks[p.id]
+          ?? Object.entries(game.countries).find(([, c]) => c.owner === p.id)?.[0];
+        if (target) this.#focus(target);
+      },
+    },
+    h('span', { class: 'swatch', style: { background: p.color } }),
+    h('span', { class: 'chip-name' }, p.name),
+    p.id !== me && game.phase === 'active' && (() => {
+      const rel = relationOf(game.relations, me, p.id).state;
+      return h('span', { class: `chip-rel rel-${rel}`, title: RELATIONS[rel].label }, RELATIONS[rel].icon);
+    })(),
+    h('b', { title: 'Países' }, String(counts[p.id] ?? 0)))));
+  }
+
+  #renderMap(ctx) {
+    const { game, players, me } = ctx;
+    const colors = {};
+    const markers = [];
+    const dimmed = new Set();
+    const classes = {};
+    const badges = [];
+
+    for (const [countryId, c] of Object.entries(game.countries)) {
+      const owner = players.get(c.owner);
+      if (owner) colors[countryId] = { fill: owner.color, classes: ['owned', c.owner === me ? 'mine' : ''] };
+      if (game.phase === 'active') {
+        const total = totalUnits(c.units);
+        const capital = Boolean(owner && game.homes[owner.id] === countryId);
+        if (total > 0 || owner) {
+          badges.push({ countryId, text: total, color: owner?.color ?? NEUTRAL_BADGE, always: Boolean(owner), capital });
+        }
+      }
+    }
+
+    if (game.phase === 'picking') {
+      for (const [playerId, countryId] of Object.entries(game.picks)) {
+        const p = players.get(playerId);
+        if (!p) continue;
+        colors[countryId] = { fill: p.color, classes: ['reserved', playerId === me ? 'mine' : ''] };
+        markers.push({ countryId, color: p.color, kind: 'pick' });
+      }
+      for (const c of world.countries) {
+        if (game.picks[me] !== c.id && this.#blockedFor(game, me, c.id)) dimmed.add(c.id);
+      }
+    }
+
+    // Con un país propio seleccionado, se marcan los vecinos a los que se puede enviar tropas.
+    const sel = this.selected && game.countries[this.selected];
+    if (game.phase === 'active' && sel?.owner === me) {
+      for (const n of world.byId.get(this.selected).neighbors) {
+        const owner = game.countries[n].owner;
+        const rel = owner && owner !== me ? relationOf(game.relations, me, owner).state : null;
+        if (owner === me || rel === 'alliance') classes[n] = ['target-own'];
+        else if (!rel || rel === 'war') classes[n] = ['target-enemy'];
+      }
+    }
+
+    this.map.update({ colors, markers, dimmed, classes, badges });
+    this.map.setArmies(game.armies.map((a) => ({
+      ...a,
+      color: players.get(a.owner)?.color ?? NEUTRAL_COLOR,
+      count: totalUnits(a.units),
+      mine: a.owner === me,
+    })));
+  }
+
+  // Batallas nuevas: destello en el mapa y aviso si nos afectan.
+  #handleEvents({ game, players, me }) {
+    const events = game.events ?? [];
+    const latest = events.length ? events[events.length - 1].id : 0;
+    if (this.lastEventId === null) {
+      this.lastEventId = latest; // al entrar no repetimos batallas antiguas
+      return;
+    }
+    for (const e of events) {
+      if (e.id <= this.lastEventId) continue;
+      if (e.type === 'eliminated') {
+        const name = players.get(e.player)?.name ?? 'Un jugador';
+        if (e.player === me) play('defeat');
+        toast(e.player === me ? 'Has sido eliminado' : `${name} ha sido eliminado`, e.player === me ? 'error' : 'info', 5000);
+        continue;
+      }
+      this.map.flash(e.country, e.attackerWins ? 'conquest' : 'repelled');
+      const country = world.byId.get(e.country).name;
+      const attacker = players.get(e.attacker)?.name ?? 'Alguien';
+      if (e.attacker === me) play(e.attackerWins ? 'conquest' : 'battle');
+      else if (e.defender === me) play(e.attackerWins ? 'lost' : 'battle');
+      if (e.attacker === null && e.defender === me) {
+        toast(e.attackerWins ? `🏴 Las fuerzas neutrales han recuperado ${country}` : `🛡 Has rechazado un contraataque neutral en ${country}`,
+          e.attackerWins ? 'error' : 'success', 5000);
+      } else if (e.attacker === me) {
+        toast(e.attackerWins ? `⚔ Has conquistado ${country}` : `Tu ataque a ${country} ha fracasado`,
+          e.attackerWins ? 'success' : 'error', 4500);
+      } else if (e.defender === me) {
+        toast(e.attackerWins ? `¡${attacker} ha conquistado ${country}!` : `🛡 Has rechazado el ataque de ${attacker} a ${country}`,
+          e.attackerWins ? 'error' : 'success', 5000);
+      }
+    }
+    this.lastEventId = latest;
+  }
+
+  // Alerta en tiempo real: un ejército ajeno se dirige a uno de tus países.
+  #warnIncoming({ game, players, me }) {
+    const first = this.seenArmies === null;
+    this.seenArmies ??= new Set();
+    let alarm = false;
+    for (const a of game.armies) {
+      if (this.seenArmies.has(a.id)) continue;
+      this.seenArmies.add(a.id);
+      if (first || a.owner === me || game.countries[a.to]?.owner !== me) continue;
+      if (a.owner && relationOf(game.relations, me, a.owner).state === 'alliance') continue; // refuerzo aliado
+      const who = a.owner ? players.get(a.owner)?.name ?? 'Un jugador' : 'Las fuerzas neutrales';
+      const secs = Math.max(1, Math.round((a.arriveAt - this.#serverNow()) / 1000));
+      toast(`⚠ ${who} avanza hacia ${world.byId.get(a.to).name} con ${totalUnits(a.units)} unidades · llega en ${secs} s`, 'error', 5000);
+      alarm = true;
+    }
+    if (alarm) play('alarm');
+    // Olvida los ejércitos que ya llegaron.
+    const live = new Set(game.armies.map((a) => a.id));
+    for (const id of this.seenArmies) if (!live.has(id)) this.seenArmies.delete(id);
+  }
+
+  // ---------- Panel lateral ----------
+
+  #select(id) {
+    if (id !== this.selected) this.sendUnits = null;
+    this.selected = id;
+    const ctx = this.#ctx();
+    if (ctx) this.#renderMap(ctx); // resalta los vecinos del nuevo país
+    this.#renderPanel();
+  }
+
+  #focus(id, minZoom) {
+    this.map.select(id);
+    if (id) this.map.centerOn(id, minZoom);
+    this.#select(id);
+  }
+
+  #renderPanel() {
+    const ctx = this.#ctx();
+    if (!ctx || this.panelPressed) return;
+    const { game, players, me, self } = ctx;
+    const panel = $('#country-panel');
+    const picking = game.phase === 'picking';
+    const c = this.selected && world.byId.get(this.selected);
+
+    if (!c) {
+      const mine = this.#myCountries(ctx).map((id) => world.byId.get(id));
+      fill(panel,
+        h('span', { class: 'eyebrow' }, 'Inteligencia'),
+        h('h3', { class: 'country-title' }, picking ? 'Elige tu país' : 'Selecciona un país'),
+        h('p', { class: 'muted' }, picking
+          ? 'Haz clic en un país del mapa y confírmalo. No puedes elegir uno ocupado ni vecino de otro jugador (aparecen oscurecidos). Si se acaba el tiempo, se te asignará uno.'
+          : 'Selecciona uno de tus países para reclutar tropas y enviarlas a sus vecinos. Con un país tuyo seleccionado, clic derecho sobre un vecino envía las tropas al instante.'),
+        mine.length > 0 && h('h4', { class: 'panel-sub' }, 'Tus territorios'),
+        mine.length > 0 && h('div', { class: 'chips' }, mine.map((m) => this.#countryChip(m, ctx))),
+        self && h('h4', { class: 'panel-sub' }, 'Balance por minuto'),
+        self && this.#resourceGrid(Object.fromEntries(RESOURCES.map((r) => [r, self.income[r] - self.upkeep[r]])), true),
+      );
+      return;
+    }
+
+    const state = game.countries[c.id];
+    const owner = this.#ownerOf(game, players, c.id);
+    const picker = picking ? this.#pickerOf(game, players, c.id) : null;
+    const homeOf = [...players.values()].find((p) => game.homes[p.id] === c.id);
+    const isMine = owner?.id === me && game.phase === 'active';
+    const swatchColor = owner?.color ?? picker?.color ?? NEUTRAL_COLOR;
+    const now = this.#serverNow();
+
+    let status;
+    if (owner) status = `Controlado por ${owner.name}${owner.id === me ? ' (tú)' : ''}`;
+    else if (picker) status = `Elegido por ${picker.name}${picker.id === me ? ' (tú)' : ''}`;
+    else status = 'Neutral · controlado por la IA';
+
+    const terrain = TERRAIN_INFO[terrainOf(c.id)];
+    fill(panel,
+      h('div', { class: 'panel-top' },
+        h('span', { class: 'eyebrow' }, 'País seleccionado'),
+        h('button', { class: 'btn btn-ghost btn-xs', title: 'Cerrar (Esc)', onClick: () => this.#focus(null) }, '✕')),
+      h('h3', { class: 'country-title' }, h('span', { class: 'swatch', style: { background: swatchColor } }), c.name),
+      h('p', { class: 'country-status' }, status),
+      owner && owner.id !== me && game.phase === 'active' && this.#relationLine(owner, ctx),
+      homeOf && h('span', { class: 'badge badge-host' }, `Capital de ${homeOf.name}`),
+      h('dl', { class: 'stats' },
+        h('dt', {}, 'Superficie'), h('dd', {}, `${fmt.format(c.area)} km²`),
+        h('dt', {}, 'Terreno'), h('dd', { title: `Defensa ×${terrain.defense}` }, `${terrain.label}${c.coastal ? ' · costa' : ''}`),
+        h('dt', {}, 'Desarrollo'), h('dd', {}, this.#levelPips(state.level)),
+        state.developing && h('dt', {}, 'En obras'),
+        state.developing && h('dd', {}, `nivel ${state.developing.toLevel} en ${secondsText(state.developing.readyAt - now)}`)),
+      game.phase === 'active' && this.#armySection(state, now),
+      this.#movesSection(c, ctx, now),
+      isMine && this.#recruitSection(c, ctx),
+      isMine && this.#sendSection(c, state, ctx),
+      !isMine && game.phase === 'active' && this.#attackFromSection(c, ctx),
+      h('h4', { class: 'panel-sub' }, 'Producción por minuto'),
+      this.#resourceGrid(countryIncome(c, state.level, Boolean(homeOf))),
+      homeOf && h('p', { class: 'muted small' }, 'Incluye la bonificación de capital.'),
+      isMine && this.#developAction(c, state, ctx),
+      picking && this.#pickAction(c, ctx),
+      h('h4', { class: 'panel-sub' }, 'Países vecinos'),
+      h('div', { class: 'chips' }, c.neighbors.map((id) => this.#countryChip(world.byId.get(id), ctx))),
+    );
+  }
+
+  #relationLine(owner, { game, me }) {
+    const rel = relationOf(game.relations, me, owner.id).state;
+    return h('div', { class: 'relation-line' },
+      h('span', { class: `relation-badge rel-${rel}` }, `${RELATIONS[rel].icon} ${RELATIONS[rel].label}`),
+      h('button', { class: 'btn btn-ghost btn-xs', onClick: () => this.diplo.open('diplomacy') }, 'Diplomacia'));
+  }
+
+  #armySection(state, now) {
+    const training = {};
+    for (const t of state.training) {
+      training[t.type] ??= { count: 0, next: Infinity };
+      training[t.type].count += t.count;
+      training[t.type].next = Math.min(training[t.type].next, t.readyAt);
+    }
+    return h('div', {},
+      h('h4', { class: 'panel-sub' }, `Ejército · ${totalUnits(state.units)} unidades`),
+      h('div', { class: 'unit-grid' }, UNIT_TYPES.map((t) => h('div', {
+        class: 'unit',
+        title: `${UNITS[t].label}: ataque ${UNITS[t].attack}, defensa ${UNITS[t].defense}`,
+      },
+      h('span', { class: 'unit-icon' }, UNITS[t].icon),
+      h('span', { class: 'unit-name' }, UNITS[t].label),
+      h('b', {}, String(state.units[t])),
+      training[t] && h('em', { title: 'En entrenamiento' }, `+${training[t].count} · ${secondsText(training[t].next - now)}`)))));
+  }
+
+  #movesSection(c, { game, players, me }, now) {
+    const moves = game.armies.filter((a) => a.to === c.id || a.from === c.id);
+    if (!moves.length) return null;
+    return h('div', {},
+      h('h4', { class: 'panel-sub' }, 'Movimientos'),
+      h('ul', { class: 'moves' }, moves.map((a) => {
+        const who = a.owner === me ? 'Tus tropas' : `${players.get(a.owner)?.name ?? '?'}`;
+        const dir = a.to === c.id ? `llegan desde ${world.byId.get(a.from).name}` : `van hacia ${world.byId.get(a.to).name}`;
+        const hostile = a.to === c.id && game.countries[c.id].owner !== a.owner;
+        return h('li', { class: hostile ? 'hostile' : '' },
+          h('span', { class: 'swatch', style: { background: players.get(a.owner)?.color ?? NEUTRAL_COLOR } }),
+          h('span', {}, `${who}: ${totalUnits(a.units)} ${dir}`),
+          h('b', {}, secondsText(a.arriveAt - now)));
+      })));
+  }
+
+  #recruitSection(c, { self }) {
+    return h('div', {},
+      h('h4', { class: 'panel-sub' }, 'Reclutar'),
+      h('div', { class: 'recruit-list' }, UNIT_TYPES.map((t) => {
+        const unit = UNITS[t];
+        const blocked = unit.coastalOnly && !c.coastal;
+        const buy = (n) => {
+          const cost = Object.fromEntries(Object.entries(unit.cost).map(([r, v]) => [r, v * n]));
+          const ok = !blocked && self && canAfford(self.resources, cost);
+          return h('button', {
+            class: 'btn btn-xs',
+            disabled: !ok,
+            title: blocked ? 'Solo en países con costa' : `Coste: ${costText(cost)}`,
+            onClick: async (e) => {
+              e.currentTarget.disabled = true;
+              const res = await request('game:recruit', { countryId: c.id, type: t, count: n });
+              if (!res.ok) toast(res.error, 'error');
+              else play('recruit');
+            },
+          }, `+${n}`);
+        };
+        return h('div', { class: 'recruit-row' },
+          h('span', { class: 'unit-icon' }, unit.icon),
+          h('span', { class: 'recruit-name' }, unit.label, h('small', {}, blocked ? 'requiere costa' : costText(unit.cost))),
+          buy(1), buy(5));
+      })));
+  }
+
+  #defaultSend(units) {
+    // Por defecto se envía todo salvo una infantería, que se queda defendiendo.
+    const send = { ...units };
+    if (send.infantry > 0 && totalUnits(units) > 1) send.infantry -= 1;
+    return send;
+  }
+
+  #sendSection(c, state, { game, me, self, players }) {
+    const available = state.units;
+    if (totalUnits(available) === 0) {
+      return h('p', { class: 'muted small' }, 'No hay tropas aquí para enviar.');
+    }
+    this.sendUnits ??= this.#defaultSend(available);
+    for (const t of UNIT_TYPES) this.sendUnits[t] = Math.min(this.sendUnits[t], available[t]);
+    const chosen = this.sendUnits;
+
+    const stepper = (t) => {
+      const set = (v) => {
+        chosen[t] = Math.max(0, Math.min(available[t], v));
+        this.#renderPanel();
+      };
+      return h('div', { class: 'stepper' },
+        h('span', { class: 'unit-icon', title: UNITS[t].label }, UNITS[t].icon),
+        h('button', { class: 'btn btn-xs', disabled: chosen[t] <= 0, onClick: () => set(chosen[t] - 1) }, '−'),
+        h('b', {}, `${chosen[t]}/${available[t]}`),
+        h('button', { class: 'btn btn-xs', disabled: chosen[t] >= available[t], onClick: () => set(chosen[t] + 1) }, '+'),
+        h('button', { class: 'btn btn-ghost btn-xs', onClick: () => set(chosen[t] >= available[t] ? 0 : available[t]) },
+          chosen[t] >= available[t] ? 'Nada' : 'Todo'));
+    };
+
+    return h('div', {},
+      h('h4', { class: 'panel-sub' }, `Enviar tropas · ${totalUnits(chosen)} seleccionadas`),
+      h('div', { class: 'steppers' }, UNIT_TYPES.filter((t) => available[t] > 0).map(stepper)),
+      h('div', { class: 'targets' }, c.neighbors.map((id) => {
+        const target = world.byId.get(id);
+        const ownerId = game.countries[id].owner;
+        const rel = ownerId && ownerId !== me ? relationOf(game.relations, me, ownerId).state : null;
+        const own = ownerId === me || rel === 'alliance';
+        let error = moveError(c, target, chosen);
+        if (!error && rel && rel !== 'war' && rel !== 'alliance') {
+          error = `${RELATIONS[rel].label} con ${players.get(ownerId)?.name}: declárale la guerra primero`;
+        }
+        const speed = game.speed * techBonus.speed(self?.tech);
+        const eta = error ? '' : secondsText(travelMs(c, target, chosen, speed));
+        const defenders = totalUnits(game.countries[id].units);
+        let detail = `${defenders} def. · ${eta}`;
+        if (own) detail = `${rel === 'alliance' ? 'aliado' : 'refuerzo'} · ${eta}`;
+        if (error) detail = rel && rel !== 'war' && rel !== 'alliance' ? RELATIONS[rel].label.toLowerCase() : 'no disponible';
+        return h('button', {
+          class: `target ${own ? 'own' : 'enemy'}`,
+          disabled: Boolean(error),
+          title: error ?? `${own ? 'Reforzar' : 'Atacar'} ${target.name} · llegada en ${eta}`,
+          onClick: () => this.#sendTroops(c.id, id),
+        },
+        h('span', {}, `${own ? '➜' : '⚔'} ${target.name}`),
+        h('small', {}, detail));
+      })),
+      h('p', { class: 'muted small' }, 'Atajo: clic derecho sobre un país vecino en el mapa.'));
+  }
+
+  // En un país ajeno: desde qué países tuyos puedes atacarlo.
+  #attackFromSection(c, { game, me }) {
+    const mine = c.neighbors.filter((id) => game.countries[id].owner === me);
+    if (!mine.length) return null;
+    return h('div', {},
+      h('h4', { class: 'panel-sub' }, 'Atacar desde'),
+      h('div', { class: 'chips' }, mine.map((id) => h('button', {
+        class: 'chip',
+        onClick: () => this.#focus(id),
+      }, `${world.byId.get(id).name} · ${totalUnits(game.countries[id].units)}`))));
+  }
+
+  async #sendTroops(from, to) {
+    const units = { ...(this.sendUnits ?? emptyUnits()) };
+    if (totalUnits(units) === 0) return toast('Elige al menos una unidad', 'error');
+    const res = await request('game:move', { from, to, units });
+    if (!res.ok) return toast(res.error, 'error');
+    play('march');
+    this.sendUnits = null;
+    toast(`Tropas en marcha hacia ${world.byId.get(to).name} · llegan en ${secondsText(res.arriveAt - this.#serverNow())}`);
+  }
+
+  // Clic derecho en el mapa: envía las tropas elegidas del país seleccionado a ese vecino.
+  #quickMove(targetId) {
+    const ctx = this.#ctx();
+    if (!ctx || ctx.game.phase !== 'active') return;
+    const from = this.selected;
+    if (!from || ctx.game.countries[from]?.owner !== ctx.me) {
+      toast('Selecciona primero uno de tus países');
+      return;
+    }
+    if (!world.byId.get(from).neighbors.includes(targetId)) {
+      toast('Solo puedes enviar tropas a países vecinos', 'error');
+      return;
+    }
+    this.sendUnits ??= this.#defaultSend(ctx.game.countries[from].units);
+    this.#sendTroops(from, targetId);
+  }
+
+  #developAction(c, state, { self }) {
+    if (state.level >= MAX_LEVEL) return h('p', { class: 'muted small' }, 'Desarrollo al nivel máximo.');
+    if (state.developing) return null;
+
+    const cost = developCost(state.level);
+    const reason = !self || !canAfford(self.resources, cost) ? 'No tienes recursos suficientes.' : null;
+    return h('div', { class: 'develop' },
+      h('button', {
+        class: 'btn btn-block',
+        disabled: Boolean(reason),
+        onClick: async (e) => {
+          e.currentTarget.disabled = true;
+          const res = await request('game:develop', { countryId: c.id });
+          if (!res.ok) toast(res.error, 'error');
+          else {
+            toast(`Obras iniciadas en ${c.name}`, 'success');
+            play('click');
+          }
+        },
+      }, `Desarrollar a nivel ${state.level + 1}`),
+      h('p', { class: 'muted small' }, reason ?? `Coste: ${costText(cost)}. +25 % de producción y +5 % de defensa.`));
+  }
+
+  #pickAction(c, { game, me }) {
+    if (game.picks[me] === c.id) {
+      return h('button', { class: 'btn btn-lg btn-block', disabled: true }, 'Tu elección actual');
+    }
+    if (this.#blockedFor(game, me, c.id)) {
+      return h('div', {},
+        h('button', { class: 'btn btn-lg btn-block', disabled: true }, 'No disponible'),
+        h('p', { class: 'muted small' }, 'Está ocupado o limita con el país de otro jugador.'));
+    }
+    return h('button', {
+      class: 'btn btn-primary btn-lg btn-block',
+      onClick: async (e) => {
+        e.currentTarget.disabled = true;
+        const res = await request('game:pick', { countryId: c.id });
+        if (!res.ok) {
+          toast(res.error, 'error');
+          this.#renderPanel();
+        }
+      },
+    }, game.picks[me] ? 'Cambiar a este país' : 'Elegir como país inicial');
+  }
+
+  #resourceGrid(values, signed = false) {
+    return h('div', { class: 'prod-grid' }, RESOURCES.map((r) => {
+      const v = Math.round(values[r] * 10) / 10;
+      return h('div', { class: `prod res-${r}` },
+        h('i'),
+        h('span', {}, RESOURCE_INFO[r].label),
+        h('b', { class: signed && v < 0 ? 'neg' : '' }, `${v >= 0 ? '+' : ''}${fmt1.format(v)}`));
+    }));
+  }
+
+  #levelPips(level) {
+    return h('span', { class: 'pips', title: `Nivel ${level} de ${MAX_LEVEL}` },
+      Array.from({ length: MAX_LEVEL }, (_, i) => h('i', { class: i < level ? 'on' : '' })));
+  }
+
+  #countryChip(c, { game, players }) {
+    const owner = this.#ownerOf(game, players, c.id);
+    return h('button', { class: 'chip', onClick: () => this.#focus(c.id) },
+      h('span', { class: 'swatch', style: { background: owner?.color ?? NEUTRAL_COLOR } }),
+      c.name);
+  }
+
+  #tooltip(id) {
+    const ctx = this.#ctx();
+    const c = world.byId.get(id);
+    const state = ctx?.game.countries[id];
+    const owner = ctx && this.#ownerOf(ctx.game, ctx.players, id);
+    const picker = ctx?.game.phase === 'picking' && this.#pickerOf(ctx.game, ctx.players, id);
+    const who = owner ? owner.name : picker ? `Elegido por ${picker.name}` : 'Neutral';
+    const troops = ctx?.game.phase === 'active' && state
+      ? UNIT_TYPES.filter((t) => state.units[t]).map((t) => `${UNITS[t].icon} ${state.units[t]}`).join('   ') || 'Sin tropas'
+      : null;
+    return [
+      h('strong', {}, c.name),
+      h('span', { style: { color: owner?.color ?? picker?.color ?? '' } }, who),
+      troops && h('span', { class: 'muted' }, troops),
+    ].filter(Boolean);
+  }
+
+  // ---------- Fin de partida ----------
+
+  #renderEnd({ room, game, players, me }) {
+    const result = game.result;
+    if (!result) return;
+    const firstTime = this.endShownFor !== result.endedAt;
+    if (firstTime) {
+      this.endShownFor = result.endedAt;
+      $('#end-screen').classList.remove('hidden');
+      play(result.winner === me ? 'victory' : 'defeat');
+    }
+    if (!firstTime && this.renderedEndFor === `${result.endedAt}:${room.hostId}`) return;
+    this.renderedEndFor = `${result.endedAt}:${room.hostId}`;
+
+    const winner = players.get(result.winner);
+    const won = result.winner === me;
+    const title = result.reason === 'defeat' ? 'DERROTA' : won ? 'VICTORIA' : 'FIN DE LA PARTIDA';
+    const subtitle = result.reason === 'defeat'
+      ? VICTORY_REASONS.defeat
+      : `${won ? 'Has ganado' : `${winner?.name ?? 'Un jugador'} gana`} ${VICTORY_REASONS[result.reason]}`;
+    const minutes = Math.round(result.duration / 60_000);
+    const isHost = room.hostId === me;
+
+    fill($('#end-box'),
+      h('div', { class: `end-title ${won ? 'won' : result.reason === 'defeat' ? 'lost' : ''}` },
+        h('span', { class: 'eyebrow' }, `Partida terminada · ${minutes} min`),
+        h('h2', {}, title),
+        h('p', {}, subtitle)),
+      rankingTable(result.standings, players, me),
+      h('div', { class: 'end-actions' },
+        h('button', { class: 'btn btn-ghost', onClick: () => this.showResults(false) }, 'Ver el mapa'),
+        h('button', { class: 'btn btn-ghost', onClick: () => $('#btn-leave-game').click() }, 'Salir'),
+        isHost
+          ? h('button', {
+              class: 'btn btn-primary',
+              onClick: async () => {
+                const res = await request('room:backToLobby');
+                if (!res.ok) toast(res.error, 'error');
+              },
+            }, 'Volver al lobby (revancha)')
+          : h('span', { class: 'muted' }, 'Esperando a que el anfitrión vuelva al lobby…')));
+    // Al cerrar o reabrir la ventana se actualiza el aviso del mapa.
+    $('#ended-banner').classList.toggle('hidden', !$('#end-screen').classList.contains('hidden'));
+  }
+
+  // ---------- Recursos y reloj ----------
+
+  #buildResourceBar() {
+    $('#resources').replaceChildren(...RESOURCES.map((r) => h('span', {
+      class: `res res-${r}`,
+      'data-res': r,
+      title: RESOURCE_INFO[r].label,
+    }, h('i'), h('span', { class: 'res-label' }, RESOURCE_INFO[r].label), h('b', {}, '—'), h('em', {}))));
+  }
+
+  #renderResources() {
+    const self = this.getState().self;
+    if (!self) return;
+    for (const r of RESOURCES) {
+      const el = $(`#resources [data-res="${r}"]`);
+      const value = self.resources[r];
+      const net = Math.round((self.income[r] - self.upkeep[r]) * 10) / 10;
+      const empty = value <= 0 && net <= 0;
+      el.querySelector('b').textContent = fmt.format(value);
+      const em = el.querySelector('em');
+      const shown = Math.abs(net) >= 10 ? Math.round(net) : net; // decimales solo en cifras pequeñas
+      em.textContent = `${net >= 0 ? '+' : ''}${fmt1.format(shown)}`;
+      em.classList.toggle('neg', net < 0);
+      el.classList.toggle('empty', empty);
+      el.title = `${RESOURCE_INFO[r].label}: ${value}\nIngresos: +${fmt1.format(self.income[r])}/min\nMantenimiento: −${fmt1.format(self.upkeep[r])}/min`
+        + (empty ? '\n¡Sin suministro! Las tropas que dependen de este recurso rinden a la mitad.' : '');
+
+      // Animación solo para cambios bruscos (gastos), no para el goteo continuo de ingresos.
+      const prev = this.shownResources?.[r];
+      const delta = prev == null ? 0 : value - prev;
+      const drip = Math.abs(net) / 60 * 2 + 1;
+      if (Math.abs(delta) > drip) {
+        el.classList.remove('bump-up', 'bump-down');
+        void el.offsetWidth; // reinicia la animación
+        el.classList.add(delta > 0 ? 'bump-up' : 'bump-down');
+        const float = h('span', { class: `res-float ${delta > 0 ? 'up' : 'down'}` }, `${delta > 0 ? '+' : ''}${fmt.format(delta)}`);
+        el.append(float);
+        setTimeout(() => float.remove(), 1400);
+      }
+    }
+    this.shownResources = { ...self.resources };
+  }
+
+  #tickClock() {
+    const game = this.getState().room?.game;
+    if (!game) return;
+    if (game.phase === 'picking' && game.pickDeadline) {
+      const secs = Math.ceil(Math.max(0, game.pickDeadline - this.#serverNow()) / 1000);
+      const el = $('#pick-timer');
+      el.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+      el.classList.toggle('urgent', secs <= 10);
+    }
+    // Con límite de tiempo, el reloj cuenta hacia atrás; si no, muestra el tiempo jugado.
+    const limit = game.victory?.timeLimitMs;
+    const end = game.result?.endedAt ?? this.#serverNow();
+    const elapsed = game.startedAt ? Math.max(0, end - game.startedAt) : 0;
+    const shown = limit ? Math.max(0, limit - elapsed) : elapsed;
+    const secs = Math.floor(shown / 1000);
+    const clockEl = $('#game-clock');
+    clockEl.textContent = `${limit ? '⏳ ' : ''}${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+    clockEl.classList.toggle('urgent', Boolean(limit) && secs <= 60 && !game.result);
+  }
+}

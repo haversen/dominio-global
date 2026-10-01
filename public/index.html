@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dominio Global</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%230a0d0b' stroke='%236b8f3a' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='14' fill='none' stroke='%23c9a227' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="bg-grid" aria-hidden="true"></div>
+
+  <div id="conn-status" class="conn-status" data-state="connecting">
+    <span class="dot"></span><span class="label">Conectando…</span>
+  </div>
+
+  <!-- ===== MENÚ PRINCIPAL ===== -->
+  <main id="screen-menu" class="screen active">
+    <div class="menu-wrap">
+      <header class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64">
+            <defs><linearGradient id="sweep" x1="0" x2="1"><stop offset="0" stop-color="#6b8f3a" stop-opacity="0"/><stop offset="1" stop-color="#6b8f3a" stop-opacity="0.6"/></linearGradient></defs>
+            <circle cx="32" cy="32" r="28"/><circle cx="32" cy="32" r="18"/><path d="M32 2v60M2 32h60"/>
+            <path class="radar-sweep" d="M32 32 L32 4 A28 28 0 0 1 56.2 18 Z" fill="url(#sweep)" stroke="none"/>
+          </svg>
+        </div>
+        <h1>DOMINIO <span>GLOBAL</span></h1>
+        <p class="tagline">Conquista el mundo. Por las armas o por el comercio.</p>
+      </header>
+
+      <section class="panel menu-panel">
+        <label class="field">
+          <span>Nombre de comandante</span>
+          <input id="input-name" type="text" maxlength="16" autocomplete="nickname" placeholder="Ej. General Ortega">
+        </label>
+
+        <div id="menu-main" class="menu-actions">
+          <button id="btn-create" class="btn btn-primary btn-lg">Crear partida</button>
+          <button id="btn-show-join" class="btn btn-lg">Unirse a partida</button>
+        </div>
+
+        <form id="menu-join" class="menu-join hidden" autocomplete="off">
+          <label class="field">
+            <span>Código de partida</span>
+            <input id="input-code" class="code-input" type="text" maxlength="6" placeholder="XXXXXX" spellcheck="false">
+          </label>
+          <div class="menu-actions">
+            <button type="submit" id="btn-join" class="btn btn-primary btn-lg">Entrar</button>
+            <button type="button" id="btn-cancel-join" class="btn btn-ghost">Volver</button>
+          </div>
+        </form>
+      </section>
+
+      <footer class="menu-footer">v1.0 · Dominio Global</footer>
+    </div>
+  </main>
+
+  <!-- ===== LOBBY ===== -->
+  <main id="screen-lobby" class="screen">
+    <header class="topbar">
+      <div class="topbar-title">
+        <span class="eyebrow">Sala de mando</span>
+        <h2>Preparando la operación</h2>
+      </div>
+      <div class="room-code">
+        <span class="eyebrow">Código</span>
+        <strong id="lobby-code" class="code">------</strong>
+        <button id="btn-copy-code" class="btn btn-sm">Copiar código</button>
+        <button id="btn-copy-link" class="btn btn-sm">Copiar invitación</button>
+      </div>
+      <button class="btn btn-ghost btn-sm btn-mute" title="Silenciar o activar el sonido">🔊</button>
+      <button id="btn-leave" class="btn btn-ghost btn-sm">Salir</button>
+    </header>
+
+    <div class="lobby-grid">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Comandantes</h3>
+          <span id="lobby-count" class="muted">0 / 0</span>
+        </div>
+        <ul id="player-list" class="player-list"></ul>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Ajustes de partida</h3>
+          <span id="settings-hint" class="muted"></span>
+        </div>
+        <div id="settings-form" class="settings-form"></div>
+      </section>
+
+      <div id="lobby-chat-slot" class="lobby-chat-slot">
+      <section id="chat-panel" class="panel chat-panel">
+        <div class="panel-head"><h3>Comunicaciones</h3></div>
+        <ol id="chat-log" class="chat-log"></ol>
+        <form id="chat-form" class="chat-form" autocomplete="off">
+          <input id="chat-input" type="text" maxlength="200" placeholder="Escribe un mensaje…">
+          <button class="btn btn-sm" type="submit">Enviar</button>
+        </form>
+      </section>
+      </div>
+    </div>
+
+    <footer class="action-bar">
+      <span id="start-hint" class="muted"></span>
+      <button id="btn-ready" class="btn btn-lg">Estoy listo</button>
+      <button id="btn-start" class="btn btn-primary btn-lg">Empezar partida</button>
+    </footer>
+  </main>
+
+  <!-- ===== PARTIDA ===== -->
+  <main id="screen-game" class="screen">
+    <header class="game-topbar">
+      <div class="game-brand">DOMINIO <span>GLOBAL</span></div>
+      <div id="resources" class="resources"></div>
+      <div id="game-players" class="player-chips"></div>
+      <button id="btn-diplomacy" class="btn btn-sm topbar-btn">Diplomacia <span id="diplo-count" class="count hidden">0</span></button>
+      <button id="btn-tech" class="btn btn-sm topbar-btn">Tecnología <span id="tech-progress" class="count hidden"></span></button>
+      <button id="btn-ranking" class="btn btn-sm topbar-btn" title="Clasificación y objetivos">🏆</button>
+      <button class="btn btn-sm topbar-btn btn-mute" title="Silenciar o activar el sonido">🔊</button>
+      <span class="game-clock" title="Tiempo de partida"><span id="game-clock">00:00</span></span>
+      <span class="room-tag">Sala <strong id="game-code"></strong></span>
+      <button id="btn-leave-game" class="btn btn-ghost btn-sm">Abandonar</button>
+    </header>
+
+    <div class="game-body">
+      <div class="map-area">
+        <svg id="map" class="map" role="img" aria-label="Mapa mundial"></svg>
+
+        <div id="ended-banner" class="map-banner hidden">
+          <strong>Partida terminada</strong>
+          <button id="btn-show-results" class="btn btn-primary btn-sm">Ver resultados</button>
+        </div>
+
+        <div id="eliminated-banner" class="map-banner eliminated-banner hidden">
+          <strong>Has sido eliminado</strong>
+          <span class="muted">Puedes seguir observando la partida.</span>
+        </div>
+
+        <div id="pick-banner" class="map-banner hidden">
+          <strong>Elige tu país inicial</strong>
+          <span id="pick-timer" class="banner-timer">1:00</span>
+          <span id="pick-status" class="muted"></span>
+        </div>
+
+        <div class="map-controls">
+          <button id="btn-zoom-in" class="btn btn-sm" title="Acercar">+</button>
+          <button id="btn-zoom-out" class="btn btn-sm" title="Alejar">−</button>
+          <button id="btn-zoom-reset" class="btn btn-sm" title="Ver el mundo entero">⤢</button>
+          <button id="btn-zoom-home" class="btn btn-sm" title="Ir a mi país">★</button>
+        </div>
+
+        <div id="proposals" class="proposals"></div>
+        <div id="map-tooltip" class="map-tooltip hidden"></div>
+        <svg id="minimap" class="minimap" aria-label="Minimapa"></svg>
+      </div>
+
+      <aside class="side-panel">
+        <section id="country-panel" class="panel country-panel"></section>
+        <div id="game-chat-slot" class="game-chat-slot"></div>
+      </aside>
+    </div>
+  </main>
+
+  <div id="modal" class="overlay hidden">
+    <div class="panel modal-box">
+      <header class="modal-head">
+        <nav class="tabs">
+          <button class="tab" data-tab="diplomacy">Diplomacia</button>
+          <button class="tab" data-tab="tech">Tecnología</button>
+          <button class="tab" data-tab="ranking">Clasificación</button>
+        </nav>
+        <button id="modal-close" class="btn btn-ghost btn-sm" title="Cerrar (Esc)">✕</button>
+      </header>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="end-screen" class="overlay hidden">
+    <div class="panel end-box" id="end-box"></div>
+  </div>
+
+  <div id="overlay" class="overlay hidden">
+    <div class="panel overlay-box">
+      <h3 id="overlay-title"></h3>
+      <p id="overlay-text" class="muted"></p>
+      <button id="overlay-btn" class="btn btn-primary">Recargar</button>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
