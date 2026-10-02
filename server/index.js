@@ -16,7 +16,7 @@ const saveAccounts = () => {
   clearTimeout(accountsTimer);
   accountsTimer = null;
   savingAccounts = savingAccounts
-    .then(() => storage.saveAccounts(accounts.serialize()))
+    .then(() => track(storage.saveAccounts(accounts.serialize())))
     .catch((err) => console.error('[guardado] Error al guardar las cuentas:', err.message));
   return savingAccounts;
 };
@@ -24,7 +24,16 @@ const accounts = new AccountStore({
   onChange: () => { accountsTimer ??= setTimeout(saveAccounts, 1500); },
 });
 
-const { server, rooms, close } = createGameServer({ accounts });
+// Estado del guardado, visible en /health (útil si los registros del hosting no cargan).
+const saveStatus = { lastSaveAt: null, lastError: null };
+const track = (promise) => promise
+  .then(() => { saveStatus.lastSaveAt = new Date().toISOString(); saveStatus.lastError = null; })
+  .catch((err) => { saveStatus.lastError = err.message; throw err; });
+
+const { server, rooms, close } = createGameServer({
+  accounts,
+  storageInfo: () => ({ kind: storage.kind.startsWith('archivo') ? 'archivo local' : storage.kind, ok: !saveStatus.lastError, ...saveStatus }),
+});
 
 // Recupera las cuentas y las partidas que estaban en marcha antes de reiniciar.
 try {
@@ -38,7 +47,7 @@ try {
 let saving = Promise.resolve();
 const save = () => {
   saving = saving
-    .then(() => storage.save(rooms.serialize()))
+    .then(() => track(storage.save(rooms.serialize())))
     .catch((err) => console.error('[guardado] Error al guardar:', err.message));
   return saving;
 };

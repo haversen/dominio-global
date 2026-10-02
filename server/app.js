@@ -21,7 +21,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
  * El servidor es la única autoridad: los clientes solo envían acciones
  * y reciben instantáneas del estado.
  */
-export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS, accounts = new AccountStore() } = {}) {
+export function createGameServer({
+  tickIntervalMs = TICK_INTERVAL_MS, accounts = new AccountStore(), storageInfo = () => null,
+} = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use((_req, res, next) => {
@@ -54,6 +56,8 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS, accounts =
       tickAvgMs: Math.round(metrics.tickAvgMs * 100) / 100,
       tickMaxMs: Math.round(metrics.tickMaxMs * 100) / 100,
       uptimeSec: Math.round(process.uptime()),
+      accounts: accounts.users.size,
+      storage: storageInfo(), // dónde se guardan las partidas y si el último guardado fue bien
     });
   });
 
