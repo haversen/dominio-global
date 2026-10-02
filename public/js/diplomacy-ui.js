@@ -30,7 +30,8 @@ const nodeInfo = (id) => {
   return unit ? UNITS[unit] : WEAPONS[weapon];
 };
 
-const offerText = (side) => `${fmt.format(side.amount)} ${RESOURCE_INFO[side.resource].label.toLowerCase()}`;
+const offerText = (side) => `${fmt.format(side.amount)} ${RESOURCE_INFO[side.resource].icon} ${RESOURCE_INFO[side.resource].label.toLowerCase()}`;
+const resIcon = (r) => h('i', { class: 'res-icon' }, RESOURCE_INFO[r].icon);
 const fmtPrice = (p) => new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(p);
 
 // Mini gráfica con la evolución del precio (la línea discontinua es el precio normal).
@@ -55,8 +56,8 @@ function sparkline(values, base) {
   return svg;
 }
 
-const resourcesText = (obj) => Object.entries(obj ?? {})
-  .map(([r, v]) => `${fmt.format(v)} ${RESOURCE_INFO[r].label.toLowerCase()}`).join(', ') || 'nada';
+const resourcesText = (obj) => Object.entries(obj ?? {}).filter(([, v]) => v)
+  .map(([r, v]) => `${fmt.format(v)} ${RESOURCE_INFO[r].icon}`).join(' + ') || 'nada';
 
 export class DiplomacyView {
   /** getCtx() devuelve { game, players, me, self }; serverNow() el reloj del servidor. */
@@ -346,7 +347,7 @@ export class DiplomacyView {
         const input = h('input', { type: 'number', min: '0', step: '1', value: '0', inputmode: 'numeric' });
         inputs[side][r] = input;
         return h('label', { class: `trade-row res-${r}` },
-          h('i'),
+          resIcon(r),
           h('span', {}, RESOURCE_INFO[r].label, side === 'give' && h('small', {}, ` (tienes ${fmt.format(self.resources[r])})`)),
           input);
       }));
@@ -469,7 +470,7 @@ export class DiplomacyView {
       class: `market-good res-${g}${selected ? ' active' : ''}`,
       onClick: () => { this.market.good = g; this.render(true); },
     },
-    h('span', { class: 'market-good-name' }, h('i'), RESOURCE_INFO[g].label),
+    h('span', { class: 'market-good-name' }, resIcon(g), RESOURCE_INFO[g].label),
     h('strong', { class: `market-price trend-${trend}` },
       `${fmtPrice(price)} 💰`, h('small', {}, trend === 'up' ? ' ▲' : trend === 'down' ? ' ▼' : ' ●')),
     sparkline(history, BASE_PRICES[g]),
@@ -544,9 +545,9 @@ export class DiplomacyView {
           h('strong', {}, mine ? 'Tu oferta' : p?.name ?? '?'),
           h('small', { class: 'muted' }, clock(o.expiresAt - now))),
         h('div', { class: 'offer-deal' },
-          h('span', { class: `offer-res res-${o.give.resource}` }, h('i'), `Da ${offerText(o.give)}`),
+          h('span', { class: `offer-res res-${o.give.resource}` }, `Da ${offerText(o.give)}`),
           h('span', { class: 'offer-arrow' }, '⇄'),
-          h('span', { class: `offer-res res-${o.want.resource}` }, h('i'), `Pide ${offerText(o.want)}`)),
+          h('span', { class: `offer-res res-${o.want.resource}` }, `Pide ${offerText(o.want)}`)),
         active && (mine
           ? h('button', {
               class: 'btn btn-ghost btn-xs',
@@ -577,7 +578,7 @@ export class DiplomacyView {
     const side = (key, title) => {
       const select = h('select', {
         onChange: () => { form[key].resource = select.value; select.blur(); this.render(true); },
-      }, RESOURCES.map((r) => h('option', { value: r }, RESOURCE_INFO[r].label)));
+      }, RESOURCES.map((r) => h('option', { value: r }, `${RESOURCE_INFO[r].icon} ${RESOURCE_INFO[r].label}`)));
       select.value = form[key].resource;
       const input = h('input', {
         type: 'number', min: '1', max: String(MAX_OFFER_AMOUNT), step: '1', inputmode: 'numeric', value: String(form[key].amount),
@@ -643,7 +644,7 @@ export class DiplomacyView {
     if (!error && !done && !canAfford(self.resources, node.cost)) error = 'No tienes recursos suficientes';
 
     const stats = node.unlocks.unit
-      ? `⚔ ${info.attack} · 🛡 ${info.defense} · ➤ ${info.speed}`
+      ? `⚔ ${info.attack} · 🛡 ${info.defense} · ➤ ${info.speed} km/h`
       : `alcance ${info.range} · destruye ${Math.round(info.kill * 100)} %`;
 
     let action;

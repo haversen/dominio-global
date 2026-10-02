@@ -7,7 +7,7 @@
 import { createRequire } from 'node:module';
 import { writeFileSync } from 'node:fs';
 import { feature, neighbors as topoNeighbors } from 'topojson-client';
-import { geoNaturalEarth1, geoPath, geoArea, geoGraticule10 } from 'd3-geo';
+import { geoNaturalEarth1, geoPath, geoArea, geoGraticule10, geoCentroid } from 'd3-geo';
 import countriesLib from 'i18n-iso-countries';
 
 const require = createRequire(import.meta.url);
@@ -127,6 +127,7 @@ geo.features.forEach((f, i) => {
   const main = mainPolygon(f);
   const [cx, cy] = path.centroid(main);
   const [[x0], [x1]] = path.bounds(main);
+  const [lon, lat] = geoCentroid(main);
   countries.push({
     id,
     name,
@@ -134,6 +135,8 @@ geo.features.forEach((f, i) => {
     cx: Math.round(cx * 10) / 10,
     cy: Math.round(cy * 10) / 10,
     lw: Math.round(x1 - x0), // ancho disponible para la etiqueta
+    lon: Math.round(lon * 100) / 100, // centro geográfico (para distancias reales en km)
+    lat: Math.round(lat * 100) / 100,
     area: Math.round(geoArea(f) * EARTH_RADIUS_KM ** 2),
     coastal: isCoastal(geometries[i]),
     neighbors: new Set(),

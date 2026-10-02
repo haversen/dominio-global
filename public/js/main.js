@@ -2,6 +2,7 @@ import { SETTINGS_SCHEMA, optionLabel } from '/shared/settings.js';
 import { socket, request } from './net.js';
 import { $, h, toast, copyText, avatarEl } from './dom.js';
 import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, PRESIDENT_IDS } from '/shared/leaders.js';
+import { scenarioOf, inScenario } from '/shared/scenarios.js';
 import { GameView, loadWorld } from './game-ui.js';
 import { play, isMuted, setMuted } from './sound.js';
 import { decodeCountries } from '/shared/wire.js';
@@ -300,27 +301,42 @@ function renderCountryPick(me) {
     loadWorld().then((w) => { worldData = w; if (state.room?.state === 'lobby') renderLobby(); }).catch(() => {});
     return;
   }
+  const scenarioId = state.room.settings.mapScenario;
+  const scenario = scenarioOf(scenarioId);
+  const featured = new Set(scenario.featured ?? []);
   const others = state.room.players.filter((p) => p.id !== me.id && p.country);
   const blockedBy = new Map();
+  const taken = new Map();
   for (const o of others) {
-    blockedBy.set(o.country, o.name);
+    taken.set(o.country, o.name);
+    if (scenario.allowNeighbors) continue;
     for (const n of world.byId.get(o.country)?.neighbors ?? []) if (!blockedBy.has(n)) blockedBy.set(n, o.name);
   }
-  // Las opciones se construyen una vez; luego solo se actualiza cuáles están bloqueadas.
-  if (countrySelect.options.length === 0) {
-    const sorted = [...world.countries].sort((a, b) => a.name.localeCompare(b.name, 'es'));
-    countrySelect.append(h('option', { value: '' }, '🎲 El que me toque'),
-      ...sorted.map((c) => h('option', { value: c.id }, c.name)));
+  // Las opciones se construyen de nuevo solo si cambia el mapa; luego se actualiza cuáles están ocupadas.
+  if (countrySelect.dataset.scenario !== scenarioId) {
+    countrySelect.dataset.scenario = scenarioId;
+    const sorted = world.countries.filter((c) => inScenario(scenarioId, c.id))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    const option = (c) => h('option', { value: c.id }, c.name);
+    countrySelect.replaceChildren(...[
+      h('option', { value: '' }, '🎲 El que me toque'),
+      featured.size > 0 && h('optgroup', { label: '⭐ Protagonistas de esta guerra' },
+        sorted.filter((c) => featured.has(c.id)).map(option)),
+      h('optgroup', { label: featured.size ? 'Todos los países' : `Países del mapa (${sorted.length})` },
+        sorted.filter((c) => !featured.has(c.id)).map(option)),
+    ].filter(Boolean));
   }
-  for (const opt of countrySelect.options) {
+  for (const opt of countrySelect.querySelectorAll('option')) {
     if (!opt.value) continue;
-    const by = blockedBy.get(opt.value);
-    opt.disabled = Boolean(by);
     const name = world.byId.get(opt.value).name;
-    opt.textContent = by ? `${name} (cerca de ${by})` : name;
+    const by = taken.get(opt.value);
+    const near = blockedBy.get(opt.value);
+    opt.disabled = Boolean(by || near);
+    opt.textContent = `${featured.has(opt.value) ? '⭐ ' : ''}${name}${by ? ` (de ${by})` : near ? ` (cerca de ${near})` : ''}`;
   }
   if (document.activeElement !== countrySelect) countrySelect.value = me.country ?? '';
 
+  $('#scenario-info').textContent = `${scenario.label} — ${scenario.description}`;
   const c = me.country ? world.byId.get(me.country) : null;
   $('#country-info').textContent = c
     ? `${c.coastal ? 'Con costa' : 'Sin costa'} · ${c.neighbors.length} vecinos · ${new Intl.NumberFormat('es-ES').format(Math.round(c.area / 1000))} mil km²`

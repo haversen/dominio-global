@@ -85,7 +85,31 @@ Cada país incluye su contorno ya proyectado, nombre en español, superficie, ce
 
 ## Tiempo real
 
-No hay turnos: cada jugador actúa desde su dispositivo cuando quiere y el servidor aplica todo al momento sobre el mapa común. El servidor avanza las partidas 4 veces por segundo y la velocidad se ajusta en el lobby (lenta, normal, rápida). Si no queda nadie conectado, la partida se pausa.
+No hay turnos: cada jugador actúa desde su dispositivo cuando quiere y el servidor aplica todo al momento sobre el mapa común. El servidor avanza las partidas 4 veces por segundo. La velocidad de la economía y la investigación se ajusta en el lobby (muy lenta, lenta, normal, rápida). La partida sigue aunque no quede nadie conectado.
+
+### Movimiento de las tropas, como en la vida real
+
+El tiempo de viaje es la **distancia real en km** entre los dos países (calculada con sus coordenadas, +15 % porque los caminos no son rectos) dividida por la **velocidad real en km/h** de la unidad más lenta: infantería 20 km/h, tanques 25, carros modernos 40, barcos 45, cazas 700, reactores 1300… Cruzar el mar añade un 30 %.
+
+En la sala se elige el ritmo:
+
+| Ritmo | Equivalencia | España → Francia a pie |
+|-------|--------------|------------------------|
+| Realista | como en la vida real | ~2 días |
+| Lenta | 1 h real = 1 min | ~50 min |
+| Normal | 1 h real = 10 s | ~8 min |
+| Rápida (por defecto) | 1 h real = 2 s | ~1,5 min |
+| Arcade | casi al instante | ~25 s |
+
+### Mapas (`shared/scenarios.js`)
+
+- **Mundo entero**, **solo Europa**, **solo Asia**, **solo América** y **solo África**.
+- Escenarios inspirados en guerras: **Gran Guerra (1914-1918)**, **Segunda Guerra Mundial**, **Guerra del Pacífico** y **Guerra Fría**. Tienen países protagonistas (⭐) que se reparten primero, y en los tres primeros se puede empezar al lado de otro jugador.
+- Los países de fuera del mapa se ven apagados y no se pueden pisar ni bombardear. El % de dominación se mide sobre el mapa elegido (de Rusia, en Europa, solo cuenta su parte europea).
+
+### Aspecto del mapa
+
+Océano con profundidad y oleaje, aguas poco profundas en las costas, color de terreno real por país (llanura, montaña, selva, desierto, hielo, taiga) con una textura de relieve, y los países de cada jugador teñidos con su color. Los ejércitos avanzan por rutas curvas dejando un rastro, con el icono de su tipo (🪖 infantería, silueta de tanque, ✈️ aviación orientada hacia su destino, 🚢 por mar). Los recursos se muestran con su emoticono: 💰 dinero, 🌾 alimentos, 🛢️ petróleo y 🏭 industria.
 
 ### Economía
 

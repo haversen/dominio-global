@@ -1,6 +1,8 @@
 // Mapa mundial interactivo en SVG: zoom con rueda/pellizco, arrastre, minimapa y selección.
 // El zoom se implementa cambiando el viewBox, así el SVG siempre se ve nítido.
 
+import { terrainOf, UNITS, UNIT_TYPES } from '/shared/military.js';
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MAX_ZOOM = 14;
 const CLICK_TOLERANCE_PX = 5;
@@ -8,7 +10,19 @@ const CLICK_TOLERANCE_PX = 5;
 const TAP_TOLERANCE_PX = 14;
 const LABEL_PX = 11;
 const LABEL_CHAR_PX = LABEL_PX * 0.58; // ancho aproximado de un carácter
-const NEUTRAL_SHADES = ['#2c352b', '#323c30', '#283027', '#363f33'];
+// Colores de terreno «de satélite» (algo apagados para que destaquen los de los jugadores).
+const TERRAIN_COLORS = {
+  plains: [92, 108, 62],
+  mountains: [112, 100, 80],
+  jungle: [46, 88, 44],
+  desert: [170, 144, 98],
+  frozen: [196, 206, 210],
+  taiga: [74, 90, 70],
+};
+// Países enormes cuyo terreno de juego es «helado» pero que en su mayoría son bosque boreal.
+const VISUAL_TERRAIN = { RUS: 'taiga', CAN: 'taiga' };
+const OFFMAP_FILL = '#161d22';
+const OWNER_MIX = 0.62; // cuánto color del dueño se mezcla con el terreno
 
 function svg(tag, attrs = {}) {
   const el = document.createElementNS(SVG_NS, tag);
@@ -16,10 +30,80 @@ function svg(tag, attrs = {}) {
   return el;
 }
 
-function hashShade(id) {
-  let h = 0;
-  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return NEUTRAL_SHADES[h % NEUTRAL_SHADES.length];
+const hex = (rgb) => `#${rgb.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('')}`;
+const parseHex = (color) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(color ?? '');
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+
+// Cada país tiene su tono de terreno con una ligera variación para que no parezca plano.
+const terrainCache = new Map();
+function terrainShade(id) {
+  if (!terrainCache.has(id)) {
+    let h = 0;
+    for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const k = 0.9 + (h % 21) / 100;
+    terrainCache.set(id, TERRAIN_COLORS[VISUAL_TERRAIN[id] ?? terrainOf(id)].map((v) => v * k));
+  }
+  return terrainCache.get(id);
+}
+const neutralFill = (id) => hex(terrainShade(id));
+// País de un jugador: su color mezclado con el terreno (se sigue viendo si es desierto, selva...).
+function ownedFill(id, color) {
+  const rgb = parseHex(color);
+  if (!rgb) return color;
+  const t = terrainShade(id);
+  return hex(rgb.map((v, i) => v * OWNER_MIX + t[i] * (1 - OWNER_MIX)));
+}
+
+// Textura de relieve generada al vuelo (ruido suave que se repite sin costuras).
+function reliefTexture(size = 256) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const img = ctx.createImageData(size, size);
+  const octaves = [[8, 0.5], [16, 0.3], [32, 0.2]];
+  const grids = octaves.map(([cells]) => Array.from({ length: cells * cells }, () => Math.random()));
+  const smooth = (t) => t * t * (3 - 2 * t);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let v = 0;
+      octaves.forEach(([cells, weight], o) => {
+        const gx = (x / size) * cells;
+        const gy = (y / size) * cells;
+        const x0 = Math.floor(gx);
+        const y0 = Math.floor(gy);
+        const g = grids[o];
+        const at = (i, j) => g[((j + cells) % cells) * cells + ((i + cells) % cells)];
+        const sx = smooth(gx - x0);
+        const sy = smooth(gy - y0);
+        const top = at(x0, y0) * (1 - sx) + at(x0 + 1, y0) * sx;
+        const bottom = at(x0, y0 + 1) * (1 - sx) + at(x0 + 1, y0 + 1) * sx;
+        v += (top * (1 - sy) + bottom * sy) * weight;
+      });
+      const i = (y * size + x) * 4;
+      const light = v > 0.5;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = light ? 255 : 0;
+      img.data[i + 3] = Math.abs(v - 0.5) * (light ? 150 : 260);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+// Tipo de icono de un ejército en marcha según sus unidades.
+function armyIcon(a) {
+  if (a.kind === 'strike') return { kind: 'strike', text: a.count };
+  const units = a.units ?? {};
+  const by = (pred) => UNIT_TYPES.filter((t) => pred(UNITS[t])).reduce((n, t) => n + (units[t] ?? 0), 0);
+  const total = by(() => true) || 1;
+  if (by((u) => u.domain === 'sea') > 0 && a.sea) return { kind: 'sea', text: '🚢' };
+  if (by((u) => u.domain === 'air') === total) return { kind: 'air', text: '✈️' };
+  if (by((u) => u.class === 'armor') > 0) return { kind: 'armor' };
+  return { kind: 'infantry', text: '🪖' };
 }
 
 export class WorldMap {
@@ -61,11 +145,33 @@ export class WorldMap {
 
     this.paths = new Map();
     this.labels = [];
+    this.off = new Set(); // países fuera del mapa elegido
     const countries = svg('g', { id: 'map-countries' });
     const labels = svg('g', { class: 'map-labels' });
 
+    // Océano con profundidad, oleaje y relieve de la tierra.
+    const defs = svg('defs');
+    const ocean = svg('radialGradient', { id: 'ocean-grad', cx: '50%', cy: '45%', r: '75%' });
+    ocean.append(
+      svg('stop', { offset: '0', 'stop-color': '#15506e' }),
+      svg('stop', { offset: '0.55', 'stop-color': '#0d324a' }),
+      svg('stop', { offset: '1', 'stop-color': '#071a28' }),
+    );
+    const waves = svg('pattern', { id: 'waves', width: 60, height: 24, patternUnits: 'userSpaceOnUse' });
+    waves.append(svg('path', { d: 'M0 12 Q7.5 8 15 12 T30 12 T45 12 T60 12', class: 'wave' }),
+      svg('path', { d: 'M-15 0 Q-7.5 -4 0 0 T15 0 T30 0 T45 0 T60 0', class: 'wave' }),
+      svg('path', { d: 'M-15 24 Q-7.5 20 0 24 T15 24 T30 24 T45 24 T60 24', class: 'wave' }));
+    defs.append(ocean, waves);
+    const relief = reliefTexture();
+    if (relief) {
+      const pattern = svg('pattern', { id: 'relief', width: 70, height: 70, patternUnits: 'userSpaceOnUse' });
+      pattern.append(svg('image', { href: relief, width: 70, height: 70, preserveAspectRatio: 'none' }));
+      defs.append(pattern);
+    }
+    const landD = world.countries.map((c) => c.d).join('');
+
     for (const c of world.countries) {
-      const path = svg('path', { d: c.d, class: 'country', id: `c-${c.id}`, 'data-id': c.id, fill: hashShade(c.id) });
+      const path = svg('path', { d: c.d, class: 'country', id: `c-${c.id}`, 'data-id': c.id, fill: neutralFill(c.id) });
       countries.append(path);
       this.paths.set(c.id, path);
 
@@ -86,9 +192,13 @@ export class WorldMap {
     this.labelsGroup = labels;
 
     svgEl.append(
+      defs,
       svg('path', { d: world.sphere, class: 'sphere' }),
+      svg('path', { d: world.sphere, class: 'sea-waves' }),
       svg('path', { d: world.graticule, class: 'graticule' }),
+      svg('path', { d: landD, class: 'coast-halo' }),
       countries,
+      ...(relief ? [svg('path', { d: landD, class: 'relief' })] : []),
       this.hoverPath,
       this.selectPath,
       labels,
@@ -124,12 +234,15 @@ export class WorldMap {
     const now = performance.now();
     for (const [id, path] of this.paths) {
       const style = colors[id];
-      const fill = style?.fill ?? hashShade(id);
+      const off = this.off.has(id);
+      const fill = off ? OFFMAP_FILL : style?.fill ? ownedFill(id, style.fill) : neutralFill(id);
       if (this.updatedOnce && path.getAttribute('fill') !== fill) this.capturedUntil.set(id, now + 1600);
       const flashing = (this.capturedUntil.get(id) ?? 0) > now;
       path.setAttribute('fill', fill);
       path.setAttribute('class', ['country', ...(style?.classes ?? []), ...(classes[id] ?? []),
-        dimmed.has(id) ? 'dimmed' : '', flashing ? 'captured' : ''].filter(Boolean).join(' '));
+        dimmed.has(id) ? 'dimmed' : '', flashing ? 'captured' : '', off ? 'offmap' : ''].filter(Boolean).join(' '));
+      if (style?.fill && !off) path.style.stroke = style.fill;
+      else path.style.removeProperty('stroke');
     }
     this.#renderBadges(badges);
     this.updatedOnce = true;
@@ -194,53 +307,133 @@ export class WorldMap {
     }
   }
 
-  /** armies: [{ id, from, to, departAt, arriveAt, color, count, mine, kind? }] (kind 'strike' = bomba) */
+  /**
+   * armies: [{ id, from, to, departAt, arriveAt, color, count, mine, units?, sea?, kind? }]
+   * (kind 'strike' = bomba). Cada ejército avanza por una ruta curva dejando un rastro.
+   */
   setArmies(armies) {
     this.armies = armies;
     const ids = new Set(armies.map((a) => a.id));
     for (const [id, el] of this.armyEls) {
       if (!ids.has(id)) {
         el.route.remove();
+        el.trail.remove();
         el.token.remove();
         this.armyEls.delete(id);
       }
     }
     for (const a of armies) {
-      if (this.armyEls.has(a.id)) continue;
+      const existing = this.armyEls.get(a.id);
+      if (existing) {
+        existing.count.textContent = a.kind === 'strike' ? '' : a.count;
+        continue;
+      }
       const from = this.byId.get(a.from);
       const to = this.byId.get(a.to);
-      const route = svg('line', {
-        x1: from.cx, y1: from.cy, x2: to.cx, y2: to.cy,
-        class: `army-route${a.mine ? ' mine' : ''}${a.kind === 'strike' ? ' strike' : ''}`, stroke: a.color,
-      });
-      const token = svg('g', { class: `army${a.kind === 'strike' ? ' strike' : ''}` });
+      // Curva suave: el punto de control se separa de la línea recta según la distancia.
+      const dx = to.cx - from.cx;
+      const dy = to.cy - from.cy;
+      const bend = a.kind === 'strike' ? 0.35 : 0.15;
+      const ctrl = { x: (from.cx + to.cx) / 2 - dy * bend, y: (from.cy + to.cy) / 2 + dx * bend };
+      const d = `M${from.cx} ${from.cy}Q${ctrl.x} ${ctrl.y} ${to.cx} ${to.cy}`;
+      const cls = `${a.mine ? ' mine' : ''}${a.kind === 'strike' ? ' strike' : ''}`;
+      const route = svg('path', { d, class: `army-route${cls}`, stroke: a.color });
+      const trail = svg('path', { class: `army-trail${cls}`, stroke: a.color });
+
+      const icon = armyIcon(a);
+      const token = svg('g', { class: `army army-${icon.kind}${a.kind === 'strike' ? ' strike' : ''}` });
       const inner = svg('g', { class: 'army-scale' });
-      const label = svg('text', { y: 0.5 });
-      label.textContent = a.count;
       inner.setAttribute('transform', this.#markerScale());
-      inner.append(svg('circle', { r: 9, fill: a.color }), label);
+      const glyph = svg('g', { class: 'army-glyph' });
+      if (icon.kind === 'armor') {
+        // Silueta de tanque (no existe un emoji de tanque).
+        glyph.append(
+          svg('rect', { x: -8, y: -1, width: 16, height: 6, rx: 3, class: 'tank-body' }),
+          svg('rect', { x: -4.5, y: -5.5, width: 8, height: 5, rx: 1.5, class: 'tank-body' }),
+          svg('rect', { x: 3, y: -4.2, width: 8, height: 1.8, rx: 0.9, class: 'tank-body' }),
+        );
+      } else {
+        const t = svg('text', { class: 'army-emoji', y: 1 });
+        t.textContent = icon.text;
+        glyph.append(t);
+      }
+      const count = svg('text', { class: 'army-count', y: 17 });
+      count.textContent = a.kind === 'strike' ? '' : a.count;
+      inner.append(svg('circle', { r: 12, fill: a.color, class: 'army-disc' }), glyph, count);
       token.append(inner);
-      this.routesLayer.append(route);
+      this.routesLayer.append(route, trail);
       this.armiesLayer.append(token);
-      this.armyEls.set(a.id, { route, token, inner, from, to, a });
+      this.armyEls.set(a.id, { route, trail, token, inner, glyph, count, from, to, ctrl, a, icon });
     }
     if (armies.length && !this.armyLoop) this.#animateArmies();
   }
 
   #animateArmies() {
+    const point = (el, t) => {
+      const u = 1 - t;
+      return {
+        x: u * u * el.from.cx + 2 * u * t * el.ctrl.x + t * t * el.to.cx,
+        y: u * u * el.from.cy + 2 * u * t * el.ctrl.y + t * t * el.to.cy,
+      };
+    };
     const step = () => {
       if (!this.armies.length) {
         this.armyLoop = null;
         return;
       }
       const now = this.now();
-      for (const { token, from, to, a } of this.armyEls.values()) {
+      for (const el of this.armyEls.values()) {
+        const { a } = el;
         const t = Math.min(1, Math.max(0, (now - a.departAt) / (a.arriveAt - a.departAt)));
-        token.setAttribute('transform', `translate(${from.cx + (to.cx - from.cx) * t} ${from.cy + (to.cy - from.cy) * t})`);
+        const p = point(el, t);
+        el.token.setAttribute('transform', `translate(${p.x.toFixed(2)} ${p.y.toFixed(2)})`);
+        // Rastro: el tramo de ruta ya recorrido (subdivisión de la curva en t).
+        const q = { x: el.from.cx + (el.ctrl.x - el.from.cx) * t, y: el.from.cy + (el.ctrl.y - el.from.cy) * t };
+        el.trail.setAttribute('d', `M${el.from.cx} ${el.from.cy}Q${q.x.toFixed(2)} ${q.y.toFixed(2)} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`);
+        // Aviones y bombas miran hacia donde van.
+        if (el.icon.kind === 'air' || el.icon.kind === 'strike') {
+          const ahead = point(el, Math.min(1, t + 0.02));
+          const angle = (Math.atan2(ahead.y - p.y, ahead.x - p.x) * 180) / Math.PI;
+          el.glyph.setAttribute('transform', `rotate(${(angle + (el.icon.kind === 'air' ? 45 : 0)).toFixed(1)})`);
+        } else if (el.icon.kind === 'armor') {
+          el.glyph.setAttribute('transform', el.to.cx < el.from.cx ? 'scale(-1 1)' : '');
+        }
       }
       this.armyLoop = requestAnimationFrame(step);
     };
     this.armyLoop = requestAnimationFrame(step);
+  }
+
+  /** Países que no forman parte del mapa elegido (se ven apagados y no se pueden tocar). */
+  setScope(isPlayable, focusIds = null) {
+    this.off = new Set(this.world.countries.filter((c) => !isPlayable(c.id)).map((c) => c.id));
+    for (const label of this.labels) label.off = this.off.has(label.id);
+    for (const [id, path] of this.paths) path.classList.toggle('offmap', this.off.has(id));
+    // Vista inicial del mapa: el recuadro que encierra los países elegidos.
+    this.home = null;
+    if (this.off.size) {
+      let box = null;
+      for (const id of focusIds ?? []) {
+        const b = this.paths.get(id)?.getBBox();
+        if (!b || b.width > this.world.width * 0.4) continue; // países que cruzan el mapa
+        box = box
+          ? { x0: Math.min(box.x0, b.x), y0: Math.min(box.y0, b.y), x1: Math.max(box.x1, b.x + b.width), y1: Math.max(box.y1, b.y + b.height) }
+          : { x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height };
+      }
+      if (box) {
+        const pad = 30;
+        const w = box.x1 - box.x0 + pad * 2;
+        const h = box.y1 - box.y0 + pad * 2;
+        const aspect = this.fit.w / this.fit.h;
+        const vw = Math.max(w, h * aspect);
+        this.home = { x: (box.x0 + box.x1) / 2 - vw / 2, y: (box.y0 + box.y1) / 2 - vw / aspect / 2, w: vw, h: vw / aspect };
+      }
+    }
+    this.#scheduleApply();
+  }
+
+  showHome() {
+    this.#animateTo(this.home ?? { ...this.fit });
   }
 
   /** Destello de batalla sobre un país. */
@@ -287,7 +480,7 @@ export class WorldMap {
   }
 
   reset() {
-    this.#animateTo({ ...this.fit });
+    this.showHome();
   }
 
   get zoom() {
@@ -347,7 +540,7 @@ export class WorldMap {
 
     const zoom = this.zoom;
     for (const label of this.labels) {
-      const visible = label.widthUnits / unitsPerPx >= label.textPx;
+      const visible = !label.off && label.widthUnits / unitsPerPx >= label.textPx;
       label.el.style.display = visible ? '' : 'none';
       // Las tropas neutrales solo se muestran cuando hay sitio; las de jugadores, siempre.
       const badge = this.badgeEls.get(label.id);
@@ -432,7 +625,10 @@ export class WorldMap {
           startY: e.clientY,
           moved: false,
           tolerance: e.pointerType === 'mouse' ? CLICK_TOLERANCE_PX : TAP_TOLERANCE_PX,
-          target: e.target.closest?.('.country')?.dataset.id ?? null,
+          target: (() => {
+            const id = e.target.closest?.('.country')?.dataset.id ?? null;
+            return id && this.off.has(id) ? null : id;
+          })(),
           anchor: this.#toMap(e.clientX, e.clientY),
         };
       } else if (this.pointers.size === 2) {

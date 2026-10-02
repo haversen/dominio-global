@@ -7,6 +7,7 @@ import {
 } from './game.js';
 import { trade, postOffer, acceptOffer, cancelOffer } from './market.js';
 import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, DEFAULT_PRESIDENT } from '../shared/leaders.js';
+import { inScenario, scenarioOf } from '../shared/scenarios.js';
 import { WEAPONS } from '../shared/military.js';
 import { pairKey } from '../shared/diplomacy.js';
 import { VICTORY_REASONS } from '../shared/score.js';
@@ -195,6 +196,10 @@ export class RoomManager {
     }
 
     room.settings = settings;
+    // Con otro mapa, los países elegidos que ya no están en él se olvidan.
+    for (const p of room.players.values()) {
+      if (p.country && !inScenario(settings.mapScenario, p.country)) p.country = null;
+    }
     // Si cambian las reglas, los demás tienen que volver a confirmar.
     for (const p of room.players.values()) if (p.id !== room.hostId) p.ready = false;
   }
@@ -216,10 +221,12 @@ export class RoomManager {
         player.country = null;
       } else {
         if (!COUNTRIES.has(id)) throw new GameError('INVALID', 'Ese país no existe');
+        if (!inScenario(room.settings.mapScenario, id)) throw new GameError('INVALID', 'Ese país no está en el mapa elegido');
+        const neighborsOk = scenarioOf(room.settings.mapScenario).allowNeighbors;
         for (const other of room.players.values()) {
           if (other.id === player.id || !other.country) continue;
           if (other.country === id) throw new GameError('TAKEN', `${other.name} ya ha elegido ese país`);
-          if (COUNTRIES.get(other.country).neighbors.includes(id)) {
+          if (!neighborsOk && COUNTRIES.get(other.country).neighbors.includes(id)) {
             throw new GameError('TAKEN', `Ese país limita con el de ${other.name}; elige otro más lejos`);
           }
         }

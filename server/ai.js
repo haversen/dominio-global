@@ -3,7 +3,7 @@
 //   2. envían refuerzos a un vecino neutral cuando ven tropas enemigas acercándose,
 //   3. contraatacan países de jugadores con fronteras débiles.
 
-import { UNITS, UNIT_TYPES, emptyUnits, totalUnits, travelMs, domainCount } from '../shared/military.js';
+import { UNITS, UNIT_TYPES, emptyUnits, totalUnits, travelMs, domainCount, paceScale } from '../shared/military.js';
 
 export const AI_LEVELS = {
   passive: { regenMs: 40_000, reinforce: false, counter: null, revengeOnly: true },
@@ -29,6 +29,7 @@ export function createAIState(level, countries, now) {
   };
 }
 
+const moveSpeed = (game) => game.speed * (game.pace ?? paceScale());
 const power = (units, kind) => UNIT_TYPES.reduce((sum, t) => sum + UNITS[t][kind] * (units[t] ?? 0), 0);
 
 /** Avanza la IA. Necesita el mapa (COUNTRIES) para vecinos y distancias. Devuelve true si cambió algo. */
@@ -73,7 +74,7 @@ export function tickAI(game, COUNTRIES, now) {
         const spare = Math.floor((helper.units.infantry - KEEP_INFANTRY) / 2);
         if (spare < 1) continue;
         const units = { ...emptyUnits(), infantry: spare };
-        if (now + travelMs(COUNTRIES.get(n), target, units, game.speed) >= army.arriveAt) continue;
+        if (now + travelMs(COUNTRIES.get(n), target, units, moveSpeed(game)) >= army.arriveAt) continue;
         helper.units.infantry -= spare;
         launch(n, army.to, units);
         break;
@@ -118,6 +119,6 @@ function addArmy(game, COUNTRIES, from, to, units, now) {
     to,
     units,
     departAt: now,
-    arriveAt: now + travelMs(COUNTRIES.get(from), COUNTRIES.get(to), units, game.speed),
+    arriveAt: now + travelMs(COUNTRIES.get(from), COUNTRIES.get(to), units, moveSpeed(game)),
   });
 }

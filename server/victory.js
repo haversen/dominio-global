@@ -8,7 +8,8 @@ import { scoreOf } from '../shared/score.js';
 const FREE_NODES = startingUnlocks().length;
 
 /** Clasificación actual, de mayor a menor puntuación. */
-export function standings(game, COUNTRIES, totalArea) {
+/** areaOf(countryId) da la superficie que cuenta en el mapa de la partida. */
+export function standings(game, areaOf, totalArea) {
   const rows = {};
   for (const [pid, p] of Object.entries(game.players)) {
     rows[pid] = {
@@ -28,7 +29,7 @@ export function standings(game, COUNTRIES, totalArea) {
     const row = rows[c.owner];
     if (!row) continue;
     row.countries++;
-    row.area += COUNTRIES.get(id).area;
+    row.area += areaOf(id);
     row.development += c.level - 1;
     row.units += totalUnits(c.units);
   }

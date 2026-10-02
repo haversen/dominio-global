@@ -4,10 +4,10 @@
 export const RESOURCES = ['money', 'food', 'oil', 'industry'];
 
 export const RESOURCE_INFO = {
-  money: { label: 'Dinero', short: 'Din.' },
-  food: { label: 'Alimentos', short: 'Alim.' },
-  oil: { label: 'Petróleo', short: 'Petr.' },
-  industry: { label: 'Industria', short: 'Ind.' },
+  money: { label: 'Dinero', short: 'Din.', icon: '💰' },
+  food: { label: 'Alimentos', short: 'Alim.', icon: '🌾' },
+  oil: { label: 'Petróleo', short: 'Petr.', icon: '🛢️' },
+  industry: { label: 'Industria', short: 'Ind.', icon: '🏭' },
 };
 
 export const STARTING_RESOURCES = { money: 120, food: 50, oil: 40, industry: 40 };

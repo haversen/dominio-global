@@ -1,5 +1,6 @@
 // Reglas militares compartidas por servidor y cliente: unidades, terreno, movimiento, combate y bombas.
 
+// `speed` es la velocidad real de marcha en km/h.
 // Cada unidad pertenece a una clase (para el terreno y el suministro) y a un dominio
 // (tierra, aire o mar, para el movimiento). Las de nivel II y III se desbloquean en el árbol tecnológico.
 export const UNITS = {
@@ -7,65 +8,65 @@ export const UNITS = {
   infantry: {
     label: 'Infantería', icon: '♟', class: 'infantry', domain: 'land', tier: 1,
     cost: { money: 8, food: 3 }, upkeep: { food: 0.3 },
-    attack: 1, defense: 1.5, speed: 14, trainMs: 4_000,
+    attack: 1, defense: 1.5, speed: 20, trainMs: 4_000,
   },
   mech: {
     label: 'Infantería mecanizada', icon: '♞', class: 'infantry', domain: 'land', tier: 2,
     cost: { money: 14, food: 3, industry: 3, oil: 1 }, upkeep: { food: 0.3, oil: 0.2 },
-    attack: 2, defense: 2.5, speed: 20, trainMs: 6_000,
+    attack: 2, defense: 2.5, speed: 35, trainMs: 6_000,
   },
   specops: {
     label: 'Fuerzas especiales', icon: '✪', class: 'special', domain: 'land', tier: 3,
     cost: { money: 30, food: 5, industry: 5 }, upkeep: { food: 0.6 },
-    attack: 4, defense: 3, speed: 18, trainMs: 9_000,
+    attack: 4, defense: 3, speed: 30, trainMs: 9_000,
   },
   // Blindados
   tank: {
     label: 'Tanques', icon: '▰', class: 'armor', domain: 'land', tier: 1,
     cost: { money: 22, industry: 6, oil: 3 }, upkeep: { oil: 0.4 },
-    attack: 4, defense: 3, speed: 22, trainMs: 8_000,
+    attack: 4, defense: 3, speed: 25, trainMs: 8_000,
   },
   heavytank: {
     label: 'Tanques pesados', icon: '▮', class: 'armor', domain: 'land', tier: 2,
     cost: { money: 40, industry: 12, oil: 6 }, upkeep: { oil: 0.7 },
-    attack: 7, defense: 6, speed: 15, trainMs: 12_000,
+    attack: 7, defense: 6, speed: 18, trainMs: 12_000,
   },
   mbt: {
     label: 'Carros de combate modernos', icon: '◆', class: 'armor', domain: 'land', tier: 3,
     cost: { money: 60, industry: 18, oil: 8 }, upkeep: { oil: 1 },
-    attack: 10, defense: 8, speed: 26, trainMs: 15_000,
+    attack: 10, defense: 8, speed: 40, trainMs: 15_000,
   },
   // Aviación
   aircraft: {
     label: 'Cazas', icon: '✈', class: 'air', domain: 'air', tier: 1,
     cost: { money: 32, industry: 10, oil: 5 }, upkeep: { oil: 0.8 },
-    attack: 5, defense: 2, speed: 60, trainMs: 12_000, interceptor: 1,
+    attack: 5, defense: 2, speed: 700, trainMs: 12_000, interceptor: 1,
   },
   bomber: {
     label: 'Bombarderos', icon: '✠', class: 'air', domain: 'air', tier: 2,
     cost: { money: 50, industry: 15, oil: 8 }, upkeep: { oil: 1.2 },
-    attack: 9, defense: 1, speed: 45, trainMs: 15_000,
+    attack: 9, defense: 1, speed: 550, trainMs: 15_000,
   },
   jet: {
     label: 'Cazas a reacción', icon: '➶', class: 'air', domain: 'air', tier: 3,
     cost: { money: 70, industry: 20, oil: 10 }, upkeep: { oil: 1.5 },
-    attack: 8, defense: 5, speed: 90, trainMs: 18_000, interceptor: 2,
+    attack: 8, defense: 5, speed: 1300, trainMs: 18_000, interceptor: 2,
   },
   // Marina
   navy: {
     label: 'Destructores', icon: '⚓', class: 'naval', domain: 'sea', tier: 1,
     cost: { money: 26, industry: 8, oil: 4 }, upkeep: { oil: 0.5 },
-    attack: 3, defense: 3, speed: 24, trainMs: 12_000,
+    attack: 3, defense: 3, speed: 45, trainMs: 12_000,
   },
   submarine: {
     label: 'Submarinos', icon: '◒', class: 'naval', domain: 'sea', tier: 2,
     cost: { money: 40, industry: 12, oil: 6 }, upkeep: { oil: 0.7 },
-    attack: 6, defense: 2, speed: 26, trainMs: 14_000,
+    attack: 6, defense: 2, speed: 35, trainMs: 14_000,
   },
   carrier: {
     label: 'Portaaviones', icon: '⛴', class: 'naval', domain: 'sea', tier: 3,
     cost: { money: 90, industry: 30, oil: 12 }, upkeep: { oil: 2 },
-    attack: 5, defense: 8, speed: 18, trainMs: 20_000, interceptor: 1,
+    attack: 5, defense: 8, speed: 50, trainMs: 20_000, interceptor: 1,
   },
 };
 
@@ -156,14 +157,40 @@ export function moveError(from, to, units) {
   return null;
 }
 
-/** Duración del viaje en ms: depende de la distancia y de la unidad más lenta. */
+// Ritmo de las tropas (se elige en la sala). `scale` = cuántas veces más rápido que la vida real.
+export const TROOP_PACES = {
+  realistic: { label: 'Realista: como en la vida real (horas o días)', scale: 1 },
+  slow: { label: 'Lenta: 1 hora real = 1 minuto', scale: 60 },
+  normal: { label: 'Normal: 1 hora real = 10 segundos', scale: 360 },
+  fast: { label: 'Rápida: 1 hora real = 2 segundos', scale: 1800 },
+  arcade: { label: 'Arcade: casi al instante', scale: 7200 },
+};
+export const DEFAULT_PACE = 'fast';
+export const paceScale = (pace) => TROOP_PACES[pace]?.scale ?? TROOP_PACES[DEFAULT_PACE].scale;
+
+const EARTH_RADIUS_KM = 6371;
+const ROUTE_FACTOR = 1.15; // los caminos nunca son una línea recta
+const MIN_TRAVEL_MS = 2_000;
+
+/** Distancia real en km entre los centros de dos países. */
+export function distanceKm(from, to) {
+  const rad = Math.PI / 180;
+  const dLat = (to.lat - from.lat) * rad;
+  const dLon = (to.lon - from.lon) * rad;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(from.lat * rad) * Math.cos(to.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a))) * ROUTE_FACTOR;
+}
+
+/**
+ * Duración del viaje en ms: distancia real en km dividida por la velocidad (km/h) de la unidad
+ * más lenta, como en la vida real. `speed` acelera el reloj (ritmo de tropas × velocidad de juego).
+ */
 export function travelMs(from, to, units, speed = 1) {
   const present = UNIT_TYPES.filter((t) => (units[t] ?? 0) > 0);
   const slowest = present.length ? Math.min(...present.map((t) => UNITS[t].speed)) : UNITS.infantry.speed;
-  const dist = Math.hypot(to.cx - from.cx, to.cy - from.cy);
-  let secs = Math.min(Math.max(dist / slowest, 3), 25);
-  if (from.sea.includes(to.id)) secs *= 1.3;
-  return Math.round((secs * 1000) / speed);
+  let hours = distanceKm(from, to) / slowest;
+  if (from.sea.includes(to.id)) hours *= 1.3; // embarcar y desembarcar
+  return Math.max(MIN_TRAVEL_MS, Math.round((hours * 3_600_000) / speed));
 }
 
 function power(units, kind, { terrain = 'plains', supplied = {} } = {}) {

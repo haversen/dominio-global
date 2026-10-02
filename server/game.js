@@ -5,8 +5,9 @@ import {
 } from '../shared/economy.js';
 import {
   UNITS, UNIT_TYPES, GAME_SPEEDS, emptyUnits, addUnits, totalUnits, neutralGarrison, startingArmy,
-  moveError, travelMs, resolveBattle, terrainOf, WEAPONS, interceptChance, strikeDamage,
+  moveError, travelMs, resolveBattle, terrainOf, WEAPONS, interceptChance, strikeDamage, paceScale,
 } from '../shared/military.js';
+import { SCENARIOS, DEFAULT_SCENARIO, scenarioOf, inScenario, scenarioArea } from '../shared/scenarios.js';
 import {
   TECHS, TECH_MAX_LEVEL, TECH_TREE, emptyTech, techCost, techMs, techBonus, startingUnlocks, isUnlocked,
   nodeError,
@@ -21,7 +22,10 @@ import { createMarket, tickMarket, forgetOffers, publicMarket } from './market.j
 // Mapa del mundo generado por scripts/build-world.js.
 export const WORLD = JSON.parse(readFileSync(new URL('../shared/world.json', import.meta.url), 'utf8'));
 export const COUNTRIES = new Map(WORLD.countries.map((c) => [c.id, c]));
-const TOTAL_AREA = WORLD.countries.reduce((sum, c) => sum + c.area, 0);
+// Superficie total de cada mapa (para el % de dominación).
+const TOTAL_AREA = Object.fromEntries(Object.keys(SCENARIOS).map((id) => [id,
+  WORLD.countries.filter((c) => inScenario(id, c.id)).reduce((sum, c) => sum + scenarioArea(id, c), 0)]));
+const playable = (game, countryId) => inScenario(game.scenario, countryId);
 
 export const PICK_DURATION_MS = 60_000;
 export const MAX_BATCH = 50; // unidades máximas por orden de reclutamiento
@@ -45,13 +49,17 @@ const EVENT_HISTORY = 30;
  * profiles: { [playerId]: { president, country } } elegidos en la sala antes de empezar.
  */
 export function createGame(settings, playerIds, { now = Date.now(), rng = Math.random, profiles = {} } = {}) {
+  const scenario = SCENARIOS[settings.mapScenario] ? settings.mapScenario : DEFAULT_SCENARIO;
   const game = {
     phase: 'picking',
     speed: GAME_SPEEDS[settings.gameSpeed] ?? 1,
+    scenario,
+    pace: paceScale(settings.troopPace), // cuántas veces más rápido que la vida real se mueven las tropas
     countries: Object.fromEntries(WORLD.countries.map((c) => [c.id, {
       owner: null,
       level: 1,
-      units: neutralGarrison(c, economyRating(c.id)),
+      // Los países fuera del mapa elegido quedan vacíos y no se pueden pisar.
+      units: inScenario(scenario, c.id) ? neutralGarrison(c, economyRating(c.id)) : emptyUnits(),
       training: [],
       developing: null,
     }])),
@@ -104,11 +112,17 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
 
 // ---------- Elección de país ----------
 
-/** Países que un jugador no puede elegir: los ya tomados por otros y sus vecinos. */
+/**
+ * Países que un jugador no puede elegir: los que están fuera del mapa, los ya tomados por otros
+ * y sus vecinos (en los escenarios históricos sí se puede empezar al lado de otro jugador).
+ */
 export function isBlockedFor(game, playerId, countryId) {
+  if (!playable(game, countryId)) return true;
+  const neighborsOk = scenarioOf(game.scenario).allowNeighbors;
   for (const [pid, taken] of Object.entries({ ...game.picks, ...game.homes })) {
     if (pid === playerId) continue;
-    if (taken === countryId || COUNTRIES.get(taken).neighbors.includes(countryId)) return true;
+    if (taken === countryId) return true;
+    if (!neighborsOk && COUNTRIES.get(taken).neighbors.includes(countryId)) return true;
   }
   return false;
 }
@@ -117,6 +131,7 @@ export function isBlockedFor(game, playerId, countryId) {
 export function pickCountry(game, playerId, countryId) {
   if (game.phase !== 'picking') return 'Ya no se pueden elegir países';
   if (!COUNTRIES.has(countryId)) return 'Ese país no existe';
+  if (!playable(game, countryId)) return 'Ese país no forma parte de este mapa';
   if (isBlockedFor(game, playerId, countryId)) {
     return 'Ese país está ocupado o limita con el de otro jugador';
   }
@@ -298,7 +313,7 @@ function hopsFromPlayer(game, playerId, maxHops) {
     const { hops, from } = dist.get(id);
     if (hops >= maxHops) continue;
     for (const n of COUNTRIES.get(id).neighbors) {
-      if (!dist.has(n)) {
+      if (!dist.has(n) && playable(game, n)) {
         dist.set(n, { hops: hops + 1, from });
         queue.push(n);
       }
@@ -317,6 +332,7 @@ export function launchStrike(game, playerId, weapon, targetId, now = Date.now())
   if (!isUnlocked(player.unlocked, { weapon })) return { error: `Primero tienes que investigar: ${spec.label}` };
   const target = game.countries[targetId];
   if (!target) return { error: 'Ese país no existe' };
+  if (!playable(game, targetId)) return { error: 'Ese país no forma parte de este mapa' };
   if (target.owner === playerId) return { error: 'No puedes bombardear tus propios países' };
   if (target.owner) {
     const rel = relationOf(game.relations, playerId, target.owner).state;
@@ -371,8 +387,9 @@ function strikeHits(game, strike, now, rng) {
   return event;
 }
 
+// Lo rápido que se mueven las tropas de un jugador: velocidad de juego × ritmo de tropas × logística.
 function playerSpeed(game, playerId) {
-  return game.speed * techBonus.speed(game.players[playerId]?.tech);
+  return game.speed * (game.pace ?? paceScale()) * techBonus.speed(game.players[playerId]?.tech);
 }
 
 /** Envía tropas a un país vecino. Devuelve { error } o { army }. */
@@ -382,6 +399,7 @@ export function moveArmy(game, playerId, fromId, toId, rawUnits, now = Date.now(
   const from = COUNTRIES.get(fromId);
   const to = COUNTRIES.get(toId);
   if (!source || !from || !to) return { error: 'País desconocido' };
+  if (!playable(game, toId)) return { error: 'Ese país no forma parte de este mapa' };
   if (source.owner !== playerId) return { error: 'Solo puedes mover tropas desde tus países' };
 
   const units = emptyUnits();
@@ -512,7 +530,8 @@ export function tickGame(game, playerIds, now = Date.now(), rng = Math.random) {
 
 /** Clasificación actual de la partida. */
 export function currentStandings(game) {
-  return standings(game, COUNTRIES, TOTAL_AREA);
+  const scenario = game.scenario ?? DEFAULT_SCENARIO;
+  return standings(game, (id) => scenarioArea(scenario, COUNTRIES.get(id)), TOTAL_AREA[scenario] ?? TOTAL_AREA.world);
 }
 
 /** Si se cumple alguna condición de victoria, termina la partida. Devuelve el resultado o null. */
@@ -679,6 +698,8 @@ export function releasePlayer(game, playerId) {
 export function publicGame(game) {
   return {
     phase: game.phase,
+    scenario: game.scenario ?? DEFAULT_SCENARIO,
+    pace: game.pace ?? paceScale(),
     pickDeadline: game.pickDeadline,
     startedAt: game.startedAt,
     speed: game.speed,
@@ -736,6 +757,9 @@ function autoPick(game, playerId, rng) {
   const distance = distancesFrom(taken);
 
   const free = WORLD.countries.filter((c) => !isBlockedFor(game, playerId, c.id));
+  // En los escenarios históricos se reparten primero los países protagonistas.
+  const featured = (scenarioOf(game.scenario).featured ?? []).filter((id) => free.some((c) => c.id === id));
+  if (featured.length) return featured[Math.floor(rng() * Math.min(featured.length, 2))];
   const viable = free.filter((c) => c.area >= MIN_START_AREA_KM2 && economyRating(c.id) >= 1);
   const pool = viable.length ? viable : free;
 
@@ -743,7 +767,7 @@ function autoPick(game, playerId, rng) {
     const candidates = pool.filter((c) => (distance.get(c.id) ?? Infinity) >= minDist);
     if (candidates.length) return candidates[Math.floor(rng() * candidates.length)].id;
   }
-  const any = WORLD.countries.filter((c) => !taken.includes(c.id));
+  const any = WORLD.countries.filter((c) => !taken.includes(c.id) && playable(game, c.id));
   return any[Math.floor(rng() * any.length)].id;
 }
 

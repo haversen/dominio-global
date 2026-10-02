@@ -1,3 +1,6 @@
+import { SCENARIOS, SCENARIO_IDS, DEFAULT_SCENARIO } from './scenarios.js';
+import { TROOP_PACES, DEFAULT_PACE } from './military.js';
+
 // Ajustes de partida compartidos por servidor y cliente.
 // El servidor los usa para validar; el cliente, para pintar el formulario del lobby.
 
@@ -8,8 +11,22 @@ export const SETTINGS_SCHEMA = {
     options: [2, 3, 4, 5, 6, 7, 8],
     default: 6,
   },
+  mapScenario: {
+    label: 'Mapa',
+    type: 'select',
+    options: SCENARIO_IDS,
+    labels: Object.fromEntries(SCENARIO_IDS.map((id) => [id, SCENARIOS[id].label])),
+    default: DEFAULT_SCENARIO,
+  },
+  troopPace: {
+    label: 'Movimiento de las tropas',
+    type: 'select',
+    options: Object.keys(TROOP_PACES),
+    labels: Object.fromEntries(Object.entries(TROOP_PACES).map(([id, p]) => [id, p.label])),
+    default: DEFAULT_PACE,
+  },
   gameSpeed: {
-    label: 'Velocidad de juego',
+    label: 'Velocidad de juego (economía e investigación)',
     type: 'select',
     options: ['marathon', 'slow', 'normal', 'fast'],
     labels: { marathon: 'Muy lenta (partidas de días)', slow: 'Lenta', normal: 'Normal', fast: 'Rápida' },

@@ -347,6 +347,11 @@ select:disabled { opacity: 0.7; cursor: not-allowed; }
 .res em::after { content: '/min'; opacity: 0.7; }
 .res.empty { border-color: var(--danger); animation: blink 1.4s infinite; }
 .res i, .prod i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+/* Iconos de recursos: emoticonos reales en lugar de cuadraditos de color */
+i.res-icon, .res i.res-icon, .prod i.res-icon, .market-good i.res-icon, .trade-row i.res-icon {
+  width: auto; height: auto; background: none !important; border-radius: 0;
+  font-style: normal; font-size: 1.05em; line-height: 1; flex: none;
+}
 .res-money i { background: #c9a227; }
 .res-food i { background: #76b041; }
 .res-oil i { background: #8d7bd8; }
@@ -400,23 +405,30 @@ select:disabled { opacity: 0.7; cursor: not-allowed; }
 .room-tag strong { font-family: var(--font-mono); color: var(--accent); letter-spacing: 0.15em; }
 
 .game-body { flex: 1; display: flex; min-height: 0; }
-.map-area { position: relative; flex: 1; min-width: 0; overflow: hidden; background: #070a08; }
+.map-area { position: relative; flex: 1; min-width: 0; overflow: hidden; background: #050c12; }
 
 .map { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; }
 .map.dragging { cursor: grabbing; }
-.sphere { fill: #0b1a22; stroke: #1d3340; stroke-width: 1; vector-effect: non-scaling-stroke; }
-.graticule { fill: none; stroke: rgba(120, 170, 190, 0.08); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
+.sphere { fill: url(#ocean-grad); stroke: #24536b; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.sea-waves { fill: url(#waves); pointer-events: none; }
+.wave { fill: none; stroke: rgba(160, 210, 230, 0.07); stroke-width: 0.6; }
+.graticule { fill: none; stroke: rgba(150, 200, 220, 0.07); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
+/* Aguas poco profundas junto a la costa */
+.coast-halo { fill: none; stroke: rgba(110, 190, 215, 0.22); stroke-width: 7; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+/* Relieve: textura de luces y sombras sobre toda la tierra */
+.relief { fill: url(#relief); pointer-events: none; opacity: 0.38; }
+.country.offmap { fill-opacity: 1; pointer-events: none; stroke: #0d1317; filter: saturate(0.4); }
 
 .country {
-  stroke: #0b1a22;
+  stroke: rgba(20, 26, 18, 0.75);
   stroke-width: 0.8;
   vector-effect: non-scaling-stroke;
   stroke-linejoin: round;
   cursor: pointer;
   transition: fill 0.25s, opacity 0.25s;
 }
-.country.owned { fill-opacity: 0.85; }
-.country.reserved { fill-opacity: 0.45; }
+.country.owned { stroke-width: 1.4; }
+.country.reserved { fill-opacity: 0.7; }
 .country.dimmed { opacity: 0.22; }
 .country-hover { fill: rgba(255, 255, 255, 0.12); stroke: rgba(255, 255, 255, 0.6); stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .country-selected { fill: rgba(201, 162, 39, 0.12); stroke: var(--accent); stroke-width: 2.2; vector-effect: non-scaling-stroke; pointer-events: none; }
@@ -544,10 +556,20 @@ select:disabled { opacity: 0.7; cursor: not-allowed; }
   stroke-width: 2px;
 }
 .badge:not(.badge-player) text { fill: #c5cfc2; }
-.army-route { stroke-width: 2; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; opacity: 0.55; animation: march 0.8s linear infinite; }
-.army-route.mine { opacity: 0.9; }
+.army-route { fill: none; stroke-width: 1.6; stroke-dasharray: 5 6; vector-effect: non-scaling-stroke; opacity: 0.5; animation: march 0.8s linear infinite; }
+.army-route.mine { opacity: 0.8; }
+.army-trail { fill: none; stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke; opacity: 0.85; filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8)); }
+.army-trail.strike { stroke-width: 2; stroke-dasharray: 1 3; }
+.army-disc { stroke: rgba(5, 8, 6, 0.9); stroke-width: 2; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7)); }
+.army .army-emoji { font-size: 14px; text-anchor: middle; dominant-baseline: middle; stroke: none; fill: initial; }
+.tank-body { fill: #f3f5ef; stroke: rgba(0, 0, 0, 0.6); stroke-width: 0.6; }
+.army .army-count {
+  font-size: 10px;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.85);
+  stroke-width: 3px;
+}
 @keyframes march { to { stroke-dashoffset: -11; } }
-.army circle { stroke: #0a0d0b; stroke-width: 2; }
 .army text {
   fill: #fff;
   font-family: var(--font-mono);
@@ -574,17 +596,17 @@ select:disabled { opacity: 0.7; cursor: not-allowed; }
 }
 .radar-sweep { transform-origin: 32px 32px; animation: radar 4s linear infinite; }
 @keyframes radar { to { transform: rotate(360deg); } }
-.army.strike circle { fill: #2a0d0b; stroke: #ff4d3d; stroke-width: 2; }
-.army.strike text { font-size: 11px; }
+.army.strike .army-disc { fill: #2a0d0b; stroke: #ff4d3d; stroke-width: 2; }
+.army.strike .army-emoji { font-size: 13px; }
 .army-route.strike { stroke-dasharray: 2 4; opacity: 0.9; stroke-width: 2.5; }
 .blast-nuke { stroke: #eaff6b; fill: rgba(234, 255, 107, 0.55); }
 .blast.blast-nuke { fill: none; stroke-width: 6; animation-duration: 2.4s; }
 .blast-core.blast-nuke { animation-duration: 2s; }
-.country.contaminated { stroke: #b6ff3b; stroke-width: 1.6; stroke-dasharray: 4 3; animation: toxic 1.6s linear infinite; }
+.country.contaminated { stroke: #b6ff3b !important; stroke-width: 1.6; stroke-dasharray: 4 3; animation: toxic 1.6s linear infinite; }
 @keyframes toxic { to { stroke-dashoffset: -14; } }
 .danger-text { color: #c7ff6b; }
-.country.target-enemy { stroke: rgba(217, 83, 79, 0.9); stroke-width: 1.6; }
-.country.target-own { stroke: rgba(92, 184, 92, 0.9); stroke-width: 1.6; }
+.country.target-enemy { stroke: rgba(255, 96, 90, 0.95) !important; stroke-width: 2; }
+.country.target-own { stroke: rgba(120, 220, 120, 0.95) !important; stroke-width: 2; }
 .pips { display: inline-flex; gap: 3px; }
 .pips i { width: 10px; height: 10px; border: 1px solid var(--border-strong); border-radius: 2px; }
 .pips i.on { background: var(--accent); border-color: var(--accent); }
@@ -1034,6 +1056,7 @@ button, a, .country { touch-action: manipulation; }
 .president-text { display: grid; gap: 2px; min-width: 0; }
 .president-text strong { font-family: var(--font-display); font-size: 16px; letter-spacing: 0.04em; }
 .president-perk { font-size: 12px; color: var(--success); }
+.scenario-info { color: var(--accent); font-size: 12px; }
 .country-pick { display: flex; gap: 12px; align-items: center; }
 .country-pick-fields { display: grid; gap: 6px; flex: 1; min-width: 0; }
 .country-pick select { width: 100%; }

@@ -3,6 +3,7 @@
 import { WorldMap } from './map.js';
 import { $, h, toast, guardTaps, durationText, avatarEl } from './dom.js';
 import { leaderBonus, discountCost } from '/shared/leaders.js';
+import { inScenario, scenarioOf } from '/shared/scenarios.js';
 import { request } from './net.js';
 import {
   RESOURCES, RESOURCE_INFO, MAX_LEVEL, countryIncome, developCost, canAfford,
@@ -29,12 +30,20 @@ let worldPromise = null;
 const fill = (el, ...children) => el.replaceChildren(...children.filter((c) => c != null && c !== false));
 
 const costText = (cost) => Object.entries(cost)
-  .map(([r, v]) => `${fmt.format(v)} ${RESOURCE_INFO[r].label.toLowerCase()}`).join(' + ');
+  .map(([r, v]) => `${fmt.format(v)} ${RESOURCE_INFO[r].icon}`).join(' + ');
 
+// Tiempos de llegada: segundos, minutos, horas o días (las tropas pueden ir al ritmo de la vida real).
 const secondsText = (ms) => {
   const secs = Math.max(0, Math.ceil(ms / 1000));
-  return secs >= 60 ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : `${secs} s`;
+  if (secs < 60) return `${secs} s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  const hours = Math.floor(secs / 3600);
+  if (hours < 24) return `${hours} h ${String(Math.floor((secs % 3600) / 60)).padStart(2, '0')} min`;
+  return `${Math.floor(hours / 24)} d ${hours % 24} h`;
 };
+
+const playable = (game, id) => inScenario(game.scenario, id);
+const playableNeighbors = (game, c) => c.neighbors.filter((id) => playable(game, id));
 
 export function loadWorld() {
   worldPromise ??= fetch('/shared/world.json')
@@ -140,6 +149,15 @@ export class GameView {
     if (room !== this.lastRoom) {
       this.lastRoom = room;
       this.clockOffset = room.serverTime - Date.now();
+      // Mapa elegido: los países de fuera se apagan y la cámara se centra en la región.
+      const scopeKey = `${room.code}:${room.startedAt}:${game.scenario}`;
+      if (this.scopeKey !== scopeKey) {
+        this.scopeKey = scopeKey;
+        const scenario = scenarioOf(game.scenario);
+        const focusIds = (scenario.countries ?? []).filter((id) => !scenario.areas?.[id]);
+        this.map.setScope((id) => playable(game, id), focusIds);
+        if (game.phase === 'picking' || !game.homes[me]) this.map.showHome();
+      }
       this.#renderPlayers(ctx);
       this.#renderMap(ctx);
       this.#handleEvents(ctx);
@@ -191,9 +209,12 @@ export class GameView {
 
   /** Igual que en el servidor: ocupado por otro jugador o vecino de uno de sus países. */
   #blockedFor(game, playerId, countryId) {
+    if (!playable(game, countryId)) return true;
+    const neighborsOk = scenarioOf(game.scenario).allowNeighbors;
     for (const [pid, taken] of Object.entries({ ...game.picks, ...game.homes })) {
       if (pid === playerId) continue;
-      if (taken === countryId || world.byId.get(taken).neighbors.includes(countryId)) return true;
+      if (taken === countryId) return true;
+      if (!neighborsOk && world.byId.get(taken).neighbors.includes(countryId)) return true;
     }
     return false;
   }
@@ -241,6 +262,7 @@ export class GameView {
     const badges = [];
 
     for (const [countryId, c] of Object.entries(game.countries)) {
+      if (!playable(game, countryId)) continue;
       const owner = players.get(c.owner);
       if (owner) colors[countryId] = { fill: owner.color, classes: ['owned', c.owner === me ? 'mine' : ''] };
       if (game.phase === 'active') {
@@ -267,7 +289,7 @@ export class GameView {
     // Con un país propio seleccionado, se marcan los vecinos a los que se puede enviar tropas.
     const sel = this.selected && game.countries[this.selected];
     if (game.phase === 'active' && sel?.owner === me) {
-      for (const n of world.byId.get(this.selected).neighbors) {
+      for (const n of playableNeighbors(game, world.byId.get(this.selected))) {
         const owner = game.countries[n].owner;
         const rel = owner && owner !== me ? relationOf(game.relations, me, owner).state : null;
         if (owner === me || rel === 'alliance') classes[n] = ['target-own'];
@@ -284,6 +306,7 @@ export class GameView {
     this.map.setArmies([
       ...game.armies.map((a) => ({
         ...a,
+        sea: world.byId.get(a.from)?.sea.includes(a.to),
         color: players.get(a.owner)?.color ?? NEUTRAL_COLOR,
         count: totalUnits(a.units),
         mine: a.owner === me,
@@ -467,7 +490,7 @@ export class GameView {
       isMine && this.#developAction(c, state, ctx),
       picking && this.#pickAction(c, ctx),
       h('h4', { class: 'panel-sub' }, 'Países vecinos'),
-      h('div', { class: 'chips' }, c.neighbors.map((id) => this.#countryChip(world.byId.get(id), ctx))),
+      h('div', { class: 'chips' }, playableNeighbors(game, c).map((id) => this.#countryChip(world.byId.get(id), ctx))),
     );
   }
 
@@ -590,7 +613,7 @@ export class GameView {
       if (frontier.some((id) => game.countries[id].owner === me)) return hops;
       const next = [];
       for (const id of frontier) {
-        for (const n of world.byId.get(id).neighbors) {
+        for (const n of playableNeighbors(game, world.byId.get(id))) {
           if (!seen.has(n)) {
             seen.add(n);
             next.push(n);
@@ -635,7 +658,7 @@ export class GameView {
     return h('div', {},
       h('h4', { class: 'panel-sub' }, `Enviar tropas · ${totalUnits(chosen)} seleccionadas`),
       h('div', { class: 'steppers' }, UNIT_TYPES.filter((t) => available[t] > 0).map(stepper)),
-      h('div', { class: 'targets' }, c.neighbors.map((id) => {
+      h('div', { class: 'targets' }, playableNeighbors(game, c).map((id) => {
         const target = world.byId.get(id);
         const ownerId = game.countries[id].owner;
         const rel = ownerId && ownerId !== me ? relationOf(game.relations, me, ownerId).state : null;
@@ -644,7 +667,7 @@ export class GameView {
         if (!error && rel && rel !== 'war' && rel !== 'alliance') {
           error = `${RELATIONS[rel].label} con ${players.get(ownerId)?.name}: declárale la guerra primero`;
         }
-        const speed = game.speed * techBonus.speed(self?.tech);
+        const speed = game.speed * (game.pace ?? 1800) * techBonus.speed(self?.tech);
         const eta = error ? '' : secondsText(travelMs(c, target, chosen, speed));
         const defenders = totalUnits(game.countries[id].units);
         let detail = `${defenders} def. · ${eta}`;
@@ -664,7 +687,7 @@ export class GameView {
 
   // En un país ajeno: desde qué países tuyos puedes atacarlo.
   #attackFromSection(c, { game, me }) {
-    const mine = c.neighbors.filter((id) => game.countries[id].owner === me);
+    const mine = playableNeighbors(game, c).filter((id) => game.countries[id].owner === me);
     if (!mine.length) return null;
     return h('div', {},
       h('h4', { class: 'panel-sub' }, 'Atacar desde'),
@@ -750,7 +773,7 @@ export class GameView {
     return h('div', { class: 'prod-grid' }, RESOURCES.map((r) => {
       const v = Math.round(values[r] * 10) / 10;
       return h('div', { class: `prod res-${r}` },
-        h('i'),
+        h('i', { class: 'res-icon' }, RESOURCE_INFO[r].icon),
         h('span', {}, RESOURCE_INFO[r].label),
         h('b', { class: signed && v < 0 ? 'neg' : '' }, `${v >= 0 ? '+' : ''}${fmt1.format(v)}`));
     }));
@@ -837,7 +860,8 @@ export class GameView {
       class: `res res-${r}`,
       'data-res': r,
       title: RESOURCE_INFO[r].label,
-    }, h('i'), h('span', { class: 'res-label' }, RESOURCE_INFO[r].label), h('b', {}, '—'), h('em', {}))));
+      title: RESOURCE_INFO[r].label,
+    }, h('i', { class: 'res-icon' }, RESOURCE_INFO[r].icon), h('span', { class: 'res-label' }, RESOURCE_INFO[r].label), h('b', {}, '—'), h('em', {}))));
   }
 
   #renderResources() {
