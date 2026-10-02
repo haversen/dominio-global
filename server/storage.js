@@ -14,8 +14,14 @@ const INDEX_KEY = 'dominio:rooms';
 const TTL_SECONDS = 8 * 24 * 60 * 60; // una partida abandonada desaparece a los 8 días
 const BATCH = 8;
 
-// Al copiar los valores es fácil arrastrar comillas o espacios: se quitan.
-const clean = (value) => String(value ?? '').trim().replace(/^["']+|["']+$/g, '').trim();
+// Al copiar los valores es fácil arrastrar comillas, espacios, el nombre de la variable
+// (UPSTASH_REDIS_REST_TOKEN=...) o la palabra Bearer: se quitan.
+const clean = (value) => String(value ?? '')
+  .trim()
+  .replace(/^[A-Z_]+\s*=\s*/, '')
+  .replace(/^["']+|["']+$/g, '')
+  .replace(/^Bearer\s+/i, '')
+  .trim();
 
 export function createStorage(env = process.env) {
   const url = clean(env.UPSTASH_REDIS_REST_URL);
@@ -52,6 +58,9 @@ function redisStorage(url, token) {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(commands),
     });
+    if (res.status === 401) {
+      throw new Error('Upstash respondió 401: el token no es válido. Copia de nuevo UPSTASH_REDIS_REST_TOKEN (el normal, no el de solo lectura) en Render → Environment');
+    }
     if (!res.ok) throw new Error(`Upstash respondió ${res.status}`);
     return res.json();
   };
