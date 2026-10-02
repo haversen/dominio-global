@@ -1429,3 +1429,26 @@ button, a, .country { touch-action: manipulation; }
 @media (max-width: 780px) {
   .tutorial { left: 56px; right: 8px; top: 12px; bottom: auto; width: auto; }
 }
+
+/* Móviles con muesca y app añadida a la pantalla de inicio: la barra de estado del sistema
+   (hora, batería) se dibuja encima de la página, así que se deja su hueco. */
+.game-topbar { padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
+.topbar { padding-top: calc(16px + env(safe-area-inset-top, 0px)); }
+#screen-menu { padding-top: calc(24px + env(safe-area-inset-top, 0px)); }
+.conn-status { top: calc(12px + env(safe-area-inset-top, 0px)); }
+
+@media (max-width: 780px) {
+  .game-topbar {
+    padding-top: calc(6px + env(safe-area-inset-top, 0px));
+    padding-left: max(8px, env(safe-area-inset-left, 0px));
+    padding-right: max(8px, env(safe-area-inset-right, 0px));
+  }
+  /* Los avisos salen abajo, encima de la hoja del panel, para no tapar los botones de arriba. */
+  .toasts { top: auto; bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+  #screen-menu.active ~ .toasts, #screen-lobby.active ~ .toasts { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .side-panel { padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)); }
+  .action-bar { padding-bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
+  /* El botón para volver al menú va el primero y con su nombre, para que se encuentre enseguida. */
+  .game-topbar .btn-my-games { order: -1; border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .game-topbar .btn-my-games .btn-label { display: inline; margin-left: 4px; }
+}
