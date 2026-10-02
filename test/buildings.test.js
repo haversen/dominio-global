@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createGame, pickCountry, tickGame, build, recruit, incomeFor, researchNode, research, moveArmy, PICK_DURATION_MS,
+  createGame, pickCountry, tickGame, build, recruit, incomeFor, researchNode, research, moveArmy, PICK_DURATION_MS, STABILITY,
 } from '../server/game.js';
 import { BUILDINGS, buildingMs, buildingCost } from '../shared/buildings.js';
 import { TECH_TREE, treeBonus } from '../shared/tech.js';
@@ -111,7 +111,7 @@ test('partidas guardadas con la investigación antigua siguen funcionando', () =
   assert.deepEqual(g.players.a.research, {});
 });
 
-test('perder la capital elimina al jugador y su imperio pasa a ser neutral', () => {
+test('tomar la capital elimina al jugador y el conquistador se queda con todo su imperio', () => {
   const g = game();
   // b tiene su capital (Japón) y además Corea del Sur.
   g.countries.KOR.owner = 'b';
@@ -125,11 +125,13 @@ test('perder la capital elimina al jugador y su imperio pasa a ser neutral', () 
   const { events } = tickGame(g, players, army.arriveAt, () => 0.5);
   assert.equal(g.countries.JPN.owner, 'a');
   assert.equal(g.players.b.eliminated, true, 'sin capital, b queda eliminado');
-  assert.equal(g.countries.KOR.owner, null, 'sus demás países pasan a ser neutrales');
-  assert.ok(g.countries.KOR.units.infantry >= 7, 'y conservan su guarnición');
+  assert.equal(g.countries.KOR.owner, 'a', 'sus demás países pasan a quien tomó la capital');
+  assert.ok(g.countries.KOR.units.infantry >= 7, 'con la guarnición que tenían');
+  assert.ok(g.countries.KOR.stability <= STABILITY.fromPlayer, 'recién anexionado: inestable');
   const elim = events.find((e) => e.type === 'eliminated');
   assert.equal(elim.reason, 'capital');
   assert.equal(elim.by, 'a');
+  assert.equal(elim.annexed, 1);
 });
 
 test('equilibrio: cazas más lentos, barcos más rápidos e infantería algo mejor', () => {
@@ -162,4 +164,18 @@ test('reclutar un lote grande tarda más que uno pequeño', () => {
   assert.equal(recruit(g, 'a', home, 'infantry', 100, PICK_DURATION_MS), null);
   const [one, hundred] = g.countries[home].training;
   assert.ok(hundred.readyAt - PICK_DURATION_MS > (one.readyAt - PICK_DURATION_MS) * 20);
+});
+
+test('si la capital la toman las fuerzas neutrales, el imperio pasa a ser neutral', () => {
+  const g = game();
+  g.countries.KOR.owner = 'b';
+  g.homes.b = null;
+  g.fallen = { b: null };
+  // Las eliminaciones se comprueban cuando llega un ejército: a mueve tropas entre sus países.
+  g.countries.FRA.owner = 'a';
+  g.countries.ESP.units = { ...emptyUnits(), infantry: 5 };
+  const { army } = moveArmy(g, 'a', 'ESP', 'FRA', { infantry: 1 }, T0);
+  tickGame(g, players, army.arriveAt);
+  assert.equal(g.players.b.eliminated, true);
+  assert.equal(g.countries.KOR.owner, null);
 });

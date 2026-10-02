@@ -123,6 +123,7 @@ En la sala se elige el ritmo:
 - Reclutar escribiendo la cantidad (hasta 500 por orden) o con «Max» (todo lo que puedes pagar). Los lotes grandes tardan más: cada unidad extra añade un 25 % del tiempo de una.
 - Equilibrio: la infantería cuesta más y defiende menos, y por encima de 40 unidades en un mismo combate cada unidad extra cuenta la mitad (`stackFactor` en `shared/military.js`).
 - **Préstamos** (Mercado → 🏦): quien pide elige cantidad, interés y plazo; cualquier jugador o bot puede concederlo y al vencer se cobra solo (con un 10 % de recargo si no hay dinero suficiente). Ver `server/loans.js`.
+- Tomar la capital de un jugador lo elimina y **el conquistador se queda con todo su imperio** (con sus tropas; los países anexionados empiezan con estabilidad baja). Si la capital la toman las fuerzas neutrales, su imperio pasa a ser neutral.
 - **☰ Menú de la partida**: Diplomacia, Mundo, Mercado, Tecnología, Clasificación, sonido, avisos, gráficos ligeros, tutorial y salir, en un solo botón.
 - La victoria científica (llegar a la Luna) solo existe en la **Guerra Fría**; en los demás mapas la Luna da puntos.
 - Los países neutrales (controlados por la IA) se pintan todos del mismo gris para distinguirlos de los jugadores.

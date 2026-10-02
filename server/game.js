@@ -923,12 +923,23 @@ function checkEliminations(game, now) {
 
     player.eliminated = true;
     player.research = {};
+    // Quien toma la capital se queda con todo el imperio (y con las tropas que hay dentro).
+    // Si la tomaron las fuerzas neutrales, o el conquistador ya no sigue en pie, todo pasa a ser neutral.
+    const by = lostCapital ? game.fallen?.[pid] ?? null : null;
+    const heir = by && game.players[by] && !game.players[by].eliminated ? by : null;
+    let annexed = 0;
     for (const c of Object.values(game.countries)) {
       if (c.owner !== pid) continue;
-      c.owner = null;
-      c.training = [];
+      c.owner = heir;
       c.developing = null;
       c.constructing = null;
+      if (heir) {
+        annexed++;
+        // Un imperio recién anexionado está revuelto: hay que dejar guarnición para que no se subleve.
+        c.stability = Math.min(c.stability ?? STABILITY.start, STABILITY.fromPlayer);
+      } else {
+        c.training = [];
+      }
     }
     game.armies = game.armies.filter((a) => a.owner !== pid);
     game.strikes = game.strikes.filter((s) => s.owner !== pid);
@@ -936,7 +947,7 @@ function checkEliminations(game, now) {
     forgetOffers(game, pid);
     const event = {
       id: ++game.seq, ts: now, type: 'eliminated', player: pid,
-      ...(lostCapital ? { reason: 'capital', by: game.fallen?.[pid] ?? null } : {}),
+      ...(lostCapital ? { reason: 'capital', by: game.fallen?.[pid] ?? null, annexed } : {}),
     };
     pushEvent(game, event);
     events.push(event);

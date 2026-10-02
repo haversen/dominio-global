@@ -874,7 +874,7 @@ export class RoomManager {
   #announceEvent(room, event) {
     const name = (pid) => (pid ? room.players.get(pid)?.name ?? 'Un jugador' : 'las fuerzas neutrales');
     // Avisos al móvil para quien no está mirando.
-    if (event.type === 'eliminated') this.#notify(room, event.player, '☠ Has sido eliminado', event.reason === 'capital' ? `${name(event.by)} ha tomado tu capital.` : 'Has perdido todos tus países.', 'eliminated');
+    if (event.type === 'eliminated') this.#notify(room, event.player, '☠ Has sido eliminado', event.reason === 'capital' ? `${name(event.by)} ha tomado tu capital${event.annexed ? ' y se queda con todo tu imperio' : ''}.` : 'Has perdido todos tus países.', 'eliminated');
     if (event.type === 'battle' && event.defender && event.attackerWins && !event.capitalTaken) {
       this.#notify(room, event.defender, `🏴 Has perdido ${COUNTRIES.get(event.country).name}`, `${name(event.attacker)} lo ha conquistado.`, `lost-${event.country}`);
     }
@@ -933,7 +933,9 @@ export class RoomManager {
     }
     if (event.type === 'eliminated') {
       this.#system(room, event.reason === 'capital'
-        ? `☠ ${name(event.by)} ha tomado la capital de ${name(event.player)}: ${name(event.player)} queda eliminado y sus países pasan a ser neutrales`
+        ? event.annexed
+          ? `☠ ${name(event.by)} ha tomado la capital de ${name(event.player)} y se queda con todo su imperio (${event.annexed} ${event.annexed === 1 ? 'país' : 'países'} más)`
+          : `☠ ${name(event.by)} ha tomado la capital de ${name(event.player)}: ${name(event.player)} queda eliminado y sus países pasan a ser neutrales`
         : `☠ ${name(event.player)} ha sido eliminado`);
       return;
     }
