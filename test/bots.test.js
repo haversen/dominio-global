@@ -57,7 +57,7 @@ test('bots: con 0 no hay ninguno, y una sala solo con bots se cierra', () => {
   assert.equal(rm.rooms.has(other.room.code), false, 'sin humanos, la sala desaparece');
 });
 
-test('bots: no pueden pasar de 8 jugadores en total', () => {
+test('bots: no pueden pasar de 16 jugadores en total', () => {
   const rm = new RoomManager();
   const { room, player: host } = rm.createRoom(tok(7), 'Uno');
   rm.attachSocket(tok(7), 's7');
@@ -66,7 +66,7 @@ test('bots: no pueden pasar de 8 jugadores en total', () => {
     rm.attachSocket(tok(10 + i), `s${10 + i}`);
     rm.setReady(room, room.players.get(rm.tokens.get(tok(10 + i)).playerId), true);
   }
-  rm.updateSettings(room, host, { bots: 5 });
+  rm.updateSettings(room, host, { maxPlayers: 8, bots: 12 });
   for (const p of room.players.values()) if (p.id !== host.id) p.ready = true;
   assert.throws(() => rm.start(room, host), { code: 'INVALID_SETTINGS' });
 });

@@ -19,6 +19,8 @@ import { declareWar, propose, respond, cancelProposal } from './diplomacy.js';
 export const PLAYER_COLORS = [
   '#e4572e', '#2e86de', '#f2c14e', '#17bebb',
   '#a05cde', '#76b041', '#ff8fab', '#d9d9d9',
+  '#ff9f1c', '#3d348b', '#c2185b', '#0b6e4f',
+  '#9c6644', '#6a040f', '#80ffdb', '#e9ff70',
 ];
 
 // En el lobby, un jugador desconectado conserva su plaza este tiempo antes de ser expulsado.
@@ -278,7 +280,7 @@ export class RoomManager {
       throw new GameError('NOT_READY', 'Todos los jugadores deben estar listos');
     }
 
-    // Bots opcionales que rellenan plazas (como mucho 8 jugadores en total, uno por color).
+    // Bots opcionales que rellenan plazas (como mucho 16 jugadores en total, uno por color).
     const bots = room.settings.bots ?? 0;
     if (bots > 0 && room.players.size + bots > PLAYER_COLORS.length) {
       throw new GameError('INVALID_SETTINGS', `Con ${room.players.size} jugadores caben como mucho ${PLAYER_COLORS.length - room.players.size} bots`);

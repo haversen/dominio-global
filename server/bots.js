@@ -9,7 +9,8 @@ import { buildError, buildingCost } from '../shared/buildings.js';
 import { relationOf, PROPOSALS } from '../shared/diplomacy.js';
 import { PRESIDENT_IDS } from '../shared/leaders.js';
 
-export const BOT_NAMES = ['Bismarck', 'Napoleón', 'Juana', 'Atila', 'Cleopatra', 'Aníbal', 'Catalina', 'Saladino', 'Isabel', 'Gengis'];
+export const BOT_NAMES = ['Bismarck', 'Napoleón', 'Juana', 'Atila', 'Cleopatra', 'Aníbal', 'Catalina', 'Saladino', 'Isabel', 'Gengis',
+  'Ramsés', 'Alejandro', 'Boudica', 'Pedro', 'Tokugawa', 'Moctezuma'];
 const THINK_MS = 4_000;
 // La capital nunca se deja desprotegida: perderla elimina al jugador.
 const CAPITAL_GUARD = 8;

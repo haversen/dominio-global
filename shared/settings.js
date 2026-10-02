@@ -8,7 +8,7 @@ export const SETTINGS_SCHEMA = {
   maxPlayers: {
     label: 'Jugadores máximos',
     type: 'select',
-    options: [2, 3, 4, 5, 6, 7, 8],
+    options: [2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16],
     default: 6,
   },
   mapScenario: {
@@ -49,7 +49,7 @@ export const SETTINGS_SCHEMA = {
   bots: {
     label: 'Bots (jugadores de la IA que rellenan plazas)',
     type: 'select',
-    options: [0, 1, 2, 3, 4, 5],
+    options: [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15],
     labels: { 0: 'Ninguno' },
     default: 0,
   },

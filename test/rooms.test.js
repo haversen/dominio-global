@@ -130,3 +130,30 @@ test('chat: sanea, limita frecuencia y guarda historial', () => {
   assert.throws(() => rm.addChat(room, host, 'otra vez'), { code: 'RATE_LIMIT' });
   assert.ok(room.chat.includes(msg));
 });
+
+test('caben hasta 16 jugadores, cada uno con su color y su país', async () => {
+  const { rm, room, host } = setup();
+  const { PLAYER_COLORS } = await import('../server/rooms.js');
+  const { tickGame } = await import('../server/game.js');
+  rm.updateSettings(room, host, { maxPlayers: 16 });
+  for (let i = 2; i <= 16; i++) {
+    const { player } = rm.joinRoom(tok(i), `Jugador ${i}`, room.code);
+    rm.attachSocket(tok(i), `s${i}`);
+    rm.setReady(room, player, true);
+  }
+  assert.throws(() => rm.joinRoom(tok(17), 'Uno más', room.code), { code: 'FULL' });
+  assert.equal(new Set([...room.players.values()].map((p) => p.color)).size, 16);
+  assert.equal(PLAYER_COLORS.length, 16);
+  rm.start(room, host);
+  const ids = [...room.players.keys()];
+  tickGame(room.game, ids, (room.game.pickDeadline ?? Date.now()) + 1000);
+  assert.equal(new Set(Object.values(room.game.homes)).size, 16, 'cada uno tiene su capital');
+});
+
+test('con bots se puede llegar a 16 jugadores en total', () => {
+  const { rm, room, host } = setup();
+  rm.updateSettings(room, host, { maxPlayers: 2, bots: 15 });
+  rm.start(room, host);
+  assert.equal(room.players.size, 16);
+  assert.equal([...room.players.values()].filter((p) => p.bot).length, 15);
+});
