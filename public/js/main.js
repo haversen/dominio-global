@@ -6,6 +6,7 @@ import { scenarioOf, inScenario } from '/shared/scenarios.js';
 import { GameView, loadWorld } from './game-ui.js';
 import { play, isMuted, setMuted } from './sound.js';
 import { decodeCountries } from '/shared/wire.js';
+import { applyDelta } from '/shared/delta.js';
 
 const NAME_KEY = 'dg.name';
 const AVATAR_KEY = 'dg.avatar';
@@ -55,9 +56,14 @@ function render() {
   }
 }
 
-function setRoom(room) {
-  // Los países llegan en formato compacto; se expanden aquí una sola vez.
-  if (room?.game?.countries) room.game.countries = decodeCountries(room.game.countries);
+// Último estado recibido en formato compacto (sobre él se aplican los parches).
+let rawRoom = null;
+let lastSeq = 0;
+
+function setRoom(raw) {
+  rawRoom = raw;
+  // Los países llegan en formato compacto; se expanden para la interfaz.
+  const room = raw && { ...raw, game: raw.game && { ...raw.game, countries: decodeCountries(raw.game.countries) } };
   const previous = state.room?.state;
   state.room = room;
   if (previous === 'lobby' && room?.state === 'playing') {
@@ -89,6 +95,7 @@ function enterRoom(res) {
 }
 
 function exitToMenu(message, kind = 'info') {
+  rawRoom = null;
   state.room = null;
   state.me = null;
   state.self = null;
@@ -661,7 +668,17 @@ socket.on('connect_error', () => setConn('offline', 'Sin conexión con el servid
 socket.on('room:state', (room) => {
   if (state.room && room.code !== state.room.code) return;
   if (!state.room && !state.me) return;
+  lastSeq = room.seq ?? 0;
   setRoom(room);
+});
+// Parche con lo que ha cambiado desde el último envío.
+socket.on('room:delta', ({ seq, patch }) => {
+  if (!rawRoom || seq !== lastSeq + 1) {
+    request('room:resync');
+    return;
+  }
+  lastSeq = seq;
+  setRoom(applyDelta(rawRoom, patch));
 });
 socket.on('chat:message', appendChat);
 socket.on('game:self', (self) => {

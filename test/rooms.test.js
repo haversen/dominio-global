@@ -44,7 +44,7 @@ test('solo el anfitrión cambia ajustes y empieza; los ajustes se validan', () =
   assert.throws(() => rm.updateSettings(room, host, { maxPlayers: 99 }), { code: 'INVALID_SETTINGS' });
   assert.throws(() => rm.updateSettings(room, host, { hack: 1 }), { code: 'INVALID_SETTINGS' });
   assert.throws(
-    () => rm.updateSettings(room, host, { winDomination: false, winLastStanding: false }),
+    () => rm.updateSettings(room, host, { winDomination: false, winLastStanding: false, winSpace: false }),
     { code: 'INVALID_SETTINGS' },
   );
 

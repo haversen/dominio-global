@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { io as connect } from 'socket.io-client';
 import { createGameServer } from '../server/app.js';
 import { COUNTRIES } from '../server/game.js';
+import { applyDelta } from '../shared/delta.js';
 
 let game;
 let url;
@@ -23,6 +24,14 @@ after(async () => {
 function client(token = (nextToken++).toString(16).padStart(32, 'a')) {
   const socket = connect(url, { auth: { token }, transports: ['websocket'], reconnection: false });
   clients.push(socket);
+  // Igual que el navegador: estado completo y después parches con lo que cambia.
+  socket.views = new Set();
+  const update = (view) => {
+    socket.view = view;
+    for (const fn of [...socket.views]) fn(view);
+  };
+  socket.on('room:state', (st) => update(st));
+  socket.on('room:delta', ({ patch }) => socket.view && update(applyDelta(socket.view, patch)));
   return new Promise((resolve, reject) => {
     socket.once('connect', () => resolve(socket));
     socket.once('connect_error', reject);
@@ -31,6 +40,15 @@ function client(token = (nextToken++).toString(16).padStart(32, 'a')) {
 
 const req = (socket, event, payload = {}) => socket.timeout(2000).emitWithAck(event, payload);
 const nextEvent = (socket, event) => new Promise((resolve) => socket.once(event, resolve));
+// Espera a que el estado de la sala (reconstruido con los parches) cumpla una condición.
+const nextRoom = (socket, pred = () => true) => new Promise((resolve) => {
+  const fn = (view) => {
+    if (!pred(view)) return;
+    socket.views.delete(fn);
+    resolve(view);
+  };
+  socket.views.add(fn);
+});
 
 test('rechaza conexiones sin token válido', async () => {
   await assert.rejects(client('nope'), /INVALID_TOKEN/);
@@ -44,7 +62,7 @@ test('flujo completo: crear, unirse, ajustes, listo, empezar', async () => {
   assert.equal(created.ok, true);
   const { code } = created.room;
 
-  const stateForHost = nextEvent(host, 'room:state');
+  const stateForHost = nextRoom(host, (st) => st.players.length === 2);
   const joined = await req(guest, 'room:join', { name: 'Invitado', code });
   assert.equal(joined.ok, true);
   assert.equal(joined.room.players.length, 2);
@@ -56,7 +74,7 @@ test('flujo completo: crear, unirse, ajustes, listo, empezar', async () => {
   assert.equal((await req(host, 'room:start')).code, 'NOT_READY');
   await req(guest, 'room:ready', { ready: true });
 
-  const started = nextEvent(guest, 'room:state');
+  const started = nextRoom(guest, (st) => st.state === 'playing');
   assert.equal((await req(host, 'room:start')).ok, true);
   assert.equal((await started).state, 'playing');
 });
@@ -121,12 +139,11 @@ test('partida: recursos privados y órdenes militares en tiempo real', async () 
   const b = await client();
   const { room } = await req(a, 'room:create', { name: 'Norte' });
   await req(b, 'room:join', { name: 'Sur', code: room.code });
+  await req(a, 'room:settings', { patch: { fogOfWar: false } }); // b tiene que ver los ejércitos de a
   await req(b, 'room:ready', { ready: true });
 
   const selfA = nextEvent(a, 'game:self');
-  const publicB = new Promise((resolve) => {
-    b.on('room:state', (st) => { if (st.state === 'playing') resolve(st); });
-  });
+  const publicB = nextRoom(b, (st) => st.state === 'playing');
   await req(a, 'room:start');
   const mine = await selfA;
   assert.ok(mine.resources.money > 0);
@@ -144,9 +161,7 @@ test('partida: recursos privados y órdenes militares en tiempo real', async () 
 
   // Los aviones pueden ir a cualquier vecino, también por mar.
   const target = COUNTRIES.get(home).neighbors[0];
-  const seenByB = new Promise((resolve) => {
-    b.on('room:state', (s) => { if (s.game.armies.some((x) => x.from === home)) resolve(true); });
-  });
+  const seenByB = nextRoom(b, (st) => st.game.armies.some((x) => x.from === home)).then(() => true);
   const moved = await req(a, 'game:move', { from: home, to: target, units: { aircraft: 1 } });
   assert.equal(moved.ok, true, moved.error);
   assert.ok(moved.arriveAt > Date.now());

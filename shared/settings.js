@@ -46,6 +46,28 @@ export const SETTINGS_SCHEMA = {
     labels: { random: 'Recibe uno al azar', choose: 'Lo elige en el mapa' },
     default: 'random',
   },
+  bots: {
+    label: 'Bots (jugadores de la IA que rellenan plazas)',
+    type: 'select',
+    options: [0, 1, 2, 3, 4, 5],
+    labels: { 0: 'Ninguno' },
+    default: 0,
+  },
+  fogOfWar: {
+    label: 'Niebla de guerra (solo ves cerca de tus países)',
+    type: 'bool',
+    default: true,
+  },
+  worldEvents: {
+    label: 'Eventos mundiales y noticiero',
+    type: 'bool',
+    default: true,
+  },
+  unAssembly: {
+    label: 'Naciones Unidas (votaciones entre jugadores)',
+    type: 'bool',
+    default: true,
+  },
   winDomination: {
     label: 'Victoria por dominación',
     type: 'bool',
@@ -63,6 +85,16 @@ export const SETTINGS_SCHEMA = {
     label: 'Victoria por ser el último en pie',
     type: 'bool',
     default: true,
+  },
+  winSpace: {
+    label: 'Victoria científica (llegar a la Luna)',
+    type: 'bool',
+    default: true,
+  },
+  winMission: {
+    label: 'Victoria por cumplir tu misión secreta',
+    type: 'bool',
+    default: false,
   },
   winTimeLimit: {
     label: 'Límite de tiempo (gana la mayor puntuación)',
@@ -110,7 +142,7 @@ export function applySettingsPatch(current, patch) {
     next[key] = value;
   }
 
-  if (!next.winDomination && !next.winLastStanding && !next.winTimeLimit) {
+  if (!next.winDomination && !next.winLastStanding && !next.winTimeLimit && !next.winSpace && !next.winMission) {
     return { error: 'Debe haber al menos una condición de victoria activa' };
   }
   return { settings: next };

@@ -8,9 +8,21 @@
 import { UNIT_TYPES } from './military.js';
 import { BUILDING_TYPES } from './buildings.js';
 
-export function encodeCountries(countries) {
+/**
+ * visible: Set de países que ve el jugador (niebla de guerra) o null si lo ve todo.
+ * De los países ocultos solo se envía el dueño, el nivel y si está contaminado: { h: 1, o?, l?, x? }.
+ */
+export function encodeCountries(countries, visible = null) {
   const out = {};
   for (const [id, c] of Object.entries(countries)) {
+    if (visible && !visible.has(id)) {
+      const e = { h: 1 };
+      if (c.owner) e.o = c.owner;
+      if (c.level > 1) e.l = c.level;
+      if (c.contaminatedUntil) e.x = c.contaminatedUntil;
+      out[id] = e;
+      continue;
+    }
     const e = { u: UNIT_TYPES.map((t) => c.units[t]) };
     if (c.owner) e.o = c.owner;
     if (c.level > 1) e.l = c.level;
@@ -30,7 +42,8 @@ export function decodeCountries(compact) {
     out[id] = {
       owner: e.o ?? null,
       level: e.l ?? 1,
-      units: Object.fromEntries(UNIT_TYPES.map((t, i) => [t, e.u[i]])),
+      units: Object.fromEntries(UNIT_TYPES.map((t, i) => [t, e.u?.[i] ?? 0])),
+      ...(e.h ? { hidden: true } : {}),
       training: (e.t ?? []).map(([type, count, readyAt]) => ({ type, count, readyAt })),
       developing: e.d ? { toLevel: e.d[0], readyAt: e.d[1] } : null,
       ...(e.x ? { contaminatedUntil: e.x } : {}),

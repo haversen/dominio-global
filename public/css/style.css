@@ -655,6 +655,8 @@ i.res-icon, .res i.res-icon, .prod i.res-icon, .market-good i.res-icon, .trade-r
 .danger-text { color: #c7ff6b; }
 .country.target-enemy { stroke: rgba(255, 96, 90, 0.95) !important; stroke-width: 2; }
 .country.target-own { stroke: rgba(120, 220, 120, 0.95) !important; stroke-width: 2; }
+.country.fogged { filter: brightness(0.82) saturate(0.7); }
+.fog-note p { margin: 0; }
 .country.target-naval { stroke: #6fd3ff !important; stroke-width: 2.4; stroke-dasharray: 6 4; animation: march 0.8s linear infinite; }
 .naval { display: grid; gap: 8px; margin-top: 10px; padding: 10px; border: 1px dashed rgba(111, 211, 255, 0.45); border-radius: var(--radius); background: rgba(111, 211, 255, 0.05); }
 .naval .panel-sub { margin: 0; }

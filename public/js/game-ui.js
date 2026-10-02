@@ -269,7 +269,11 @@ export class GameView {
       if (!playable(game, countryId)) continue;
       const owner = players.get(c.owner);
       if (owner) colors[countryId] = { fill: owner.color, classes: ['owned', c.owner === me ? 'mine' : ''] };
-      if (game.phase === 'active') {
+      if (c.hidden) (classes[countryId] ??= []).push('fogged');
+      if (game.phase === 'active' && c.hidden) {
+        // Con niebla, de los países enemigos solo se sabe que existen: «?».
+        if (owner) badges.push({ countryId, text: '?', color: owner.color, always: true, capital: game.homes[owner.id] === countryId });
+      } else if (game.phase === 'active') {
         const total = totalUnits(c.units);
         const capital = Boolean(owner && game.homes[owner.id] === countryId);
         if (total > 0 || owner) {
@@ -514,6 +518,11 @@ export class GameView {
   }
 
   #armySection(state, now) {
+    if (state.hidden) {
+      return h('div', { class: 'fog-note' },
+        h('h4', { class: 'panel-sub' }, 'Ejército'),
+        h('p', { class: 'muted small' }, '🌫️ Niebla de guerra: no sabes cuántas tropas hay aquí. Lo verás si conquistas un país vecino, si un aliado está cerca o si envías un espía.'));
+    }
     const training = {};
     for (const t of state.training) {
       training[t.type] ??= { count: 0, next: Infinity };
@@ -741,7 +750,7 @@ export class GameView {
           error = `${RELATIONS[rel].label} con ${players.get(ownerId)?.name}: declárale la guerra primero`;
         }
         const eta = error ? '' : secondsText(this.#eta(c, target, chosen, ctxOf));
-        const defenders = totalUnits(game.countries[id].units);
+        const defenders = game.countries[id].hidden ? '?' : totalUnits(game.countries[id].units);
         let detail = `${defenders} def. · ${eta}`;
         if (own) detail = `${rel === 'alliance' ? 'aliado' : 'refuerzo'} · ${eta}`;
         if (error) detail = rel && rel !== 'war' && rel !== 'alliance' ? RELATIONS[rel].label.toLowerCase() : 'no disponible';
@@ -954,7 +963,7 @@ export class GameView {
     const owner = ctx && this.#ownerOf(ctx.game, ctx.players, id);
     const picker = ctx?.game.phase === 'picking' && this.#pickerOf(ctx.game, ctx.players, id);
     const who = owner ? owner.name : picker ? `Elegido por ${picker.name}` : 'Neutral';
-    const troops = ctx?.game.phase === 'active' && state
+    const troops = ctx?.game.phase === 'active' && state?.hidden ? '🌫️ Tropas desconocidas' : ctx?.game.phase === 'active' && state
       ? UNIT_TYPES.filter((t) => state.units[t]).map((t) => `${UNITS[t].icon} ${state.units[t]}`).join('   ') || 'Sin tropas'
       : null;
     const built = BUILDING_TYPES.filter((t) => state?.buildings?.[t]).map((t) => `${BUILDINGS[t].icon}${state.buildings[t]}`).join(' ');

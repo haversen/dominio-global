@@ -6,6 +6,7 @@ import { Server } from 'socket.io';
 import { RoomManager, GameError } from './rooms.js';
 import { AccountStore, AccountError } from './accounts.js';
 import { isValidToken, normalizeCode, randomId } from './utils.js';
+import { makeDelta } from '../shared/delta.js';
 
 // El servidor avanza las partidas 4 veces por segundo; los recursos privados se envían cada segundo.
 const TICK_INTERVAL_MS = 250;
@@ -84,10 +85,21 @@ export function createGameServer({
   // aunque sus jugadores hagan muchas acciones seguidas.
   const dirty = new Set();
   const broadcastRoom = (room) => dirty.add(room);
+  // Lo último que se envió a cada conexión, para mandar solo las diferencias.
+  const viewCache = new Map(); // socketId -> { cache, seq }
+  const sendView = (room, player) => {
+    const state = rooms.toPublic(room, player.id); // cada jugador ve su propia niebla de guerra
+    const entry = viewCache.get(player.socketId);
+    const { full, patch, cache } = makeDelta(entry?.cache, state);
+    const seq = (entry?.seq ?? 0) + 1;
+    viewCache.set(player.socketId, { cache, seq });
+    if (full) io.to(player.socketId).emit('room:state', { ...state, seq });
+    else io.to(player.socketId).emit('room:delta', { seq, patch });
+  };
   const flush = () => {
     for (const room of dirty) {
       if (rooms.rooms.get(room.code) !== room) continue; // sala borrada entretanto
-      io.to(room.code).emit('room:state', rooms.toPublic(room));
+      for (const p of room.players.values()) if (p.socketId) sendView(room, p);
       sendPrivate(room);
     }
     const sent = new Set(dirty);
@@ -166,10 +178,11 @@ export function createGameServer({
 
       socket.join(room.code);
       socket.data.code = room.code;
+      viewCache.delete(socket.id); // el próximo envío a esta conexión será completo
       broadcastRoom(room);
       return {
         you: player.id,
-        room: rooms.toPublic(room),
+        room: rooms.toPublic(room, player.id),
         self: rooms.privateState(room, player.id),
         chat: room.chat,
         dms: rooms.directHistory(room, player.id),
@@ -179,7 +192,15 @@ export function createGameServer({
     const leaveSocketRoom = () => {
       if (socket.data.code) socket.leave(socket.data.code);
       socket.data.code = null;
+      viewCache.delete(socket.id);
     };
+
+    // El cliente perdió un parche (no debería pasar): se le reenvía el estado completo.
+    handle('room:resync', () => {
+      viewCache.delete(socket.id);
+      const ref = rooms.getByToken(tok());
+      if (ref) broadcastRoom(ref.room);
+    });
     const leaveCurrent = () => {
       const left = rooms.leave(tok());
       leaveSocketRoom();
@@ -494,6 +515,7 @@ export function createGameServer({
     });
 
     socket.on('disconnect', () => {
+      viewCache.delete(socket.id);
       const detached = rooms.detachSocket(tok(), socket.id);
       if (detached) broadcastRoom(detached.room);
     });

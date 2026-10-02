@@ -68,7 +68,8 @@ export class RoomManager {
     return { room, player };
   }
 
-  toPublic(room) {
+  /** Estado público de la sala tal como lo ve un jugador (con niebla de guerra si está activa). */
+  toPublic(room, viewerId = null) {
     return {
       code: room.code,
       state: room.state,
@@ -76,7 +77,7 @@ export class RoomManager {
       settings: room.settings,
       startedAt: room.startedAt,
       serverTime: Date.now(),
-      game: room.game ? publicGame(room.game) : null,
+      game: room.game ? publicGame(room.game, viewerId) : null,
       players: [...room.players.values()].map((p) => ({
         id: p.id,
         name: p.name,

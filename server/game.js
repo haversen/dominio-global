@@ -59,6 +59,7 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
     speed: GAME_SPEEDS[settings.gameSpeed] ?? 1,
     scenario,
     pace: paceScale(settings.troopPace), // cuántas veces más rápido que la vida real se mueven las tropas
+    fog: settings.fogOfWar === true,     // niebla de guerra: cada jugador solo ve cerca de lo suyo
     countries: Object.fromEntries(WORLD.countries.map((c) => [c.id, {
       owner: null,
       level: 1,
@@ -81,6 +82,7 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
       cooldowns: {},               // arma -> momento en que se puede volver a lanzar
       president: PRESIDENTS[profiles[id]?.president] ? profiles[id].president : DEFAULT_PRESIDENT,
       stats: { battlesWon: 0, battlesLost: 0, conquests: 0, unitsLost: 0 },
+      intel: {},                   // país -> hasta cuándo lo revela un espía
     }])),
     startPlayers: playerIds.length,
     victory: {
@@ -775,8 +777,34 @@ export function releasePlayer(game, playerId) {
 
 // ---------- Vistas ----------
 
-export function publicGame(game) {
+/**
+ * Países que ve un jugador con niebla de guerra: los suyos y los de sus aliados, sus vecinos,
+ * los destinos de sus ejércitos y los que revelan sus espías. null = lo ve todo.
+ */
+export function visibleCountries(game, viewerId, now = Date.now()) {
+  if (!game.fog || game.phase !== 'active' || !viewerId) return null;
+  const viewer = game.players[viewerId];
+  if (!viewer || viewer.eliminated || viewer.space?.satellite) return null;
+  const friends = new Set([viewerId]);
+  for (const pid of Object.keys(game.players)) {
+    if (pid !== viewerId && relationOf(game.relations, viewerId, pid).state === 'alliance') friends.add(pid);
+  }
+  const seen = new Set();
+  for (const [id, c] of Object.entries(game.countries)) {
+    if (!friends.has(c.owner)) continue;
+    seen.add(id);
+    for (const n of COUNTRIES.get(id).neighbors) seen.add(n);
+  }
+  for (const a of game.armies) if (friends.has(a.owner)) seen.add(a.to);
+  for (const [id, until] of Object.entries(viewer.intel ?? {})) if (until > now) seen.add(id);
+  return seen;
+}
+
+export function publicGame(game, viewerId = null, now = Date.now()) {
+  const visible = visibleCountries(game, viewerId, now);
+  const canSee = (id) => !visible || visible.has(id);
   return {
+    fog: Boolean(visible),
     phase: game.phase,
     scenario: game.scenario ?? DEFAULT_SCENARIO,
     pace: game.pace ?? paceScale(),
@@ -785,9 +813,10 @@ export function publicGame(game) {
     speed: game.speed,
     homes: game.homes,
     picks: game.picks,
-    countries: encodeCountries(game.countries),
-    armies: game.armies,
-    strikes: game.strikes,
+    countries: encodeCountries(game.countries, visible),
+    // Con niebla solo se ven los ejércitos y bombas que salen o llegan a países visibles.
+    armies: visible ? game.armies.filter((a) => a.owner === viewerId || canSee(a.from) || canSee(a.to)) : game.armies,
+    strikes: visible ? game.strikes.filter((x) => x.owner === viewerId || canSee(x.to)) : game.strikes,
     events: game.events,
     relations: game.relations,
     market: publicMarket(game.market),
