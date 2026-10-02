@@ -110,3 +110,30 @@ test('partidas guardadas con la investigación antigua siguen funcionando', () =
   assert.ok(g.players.a.unlocked.includes('arm2'));
   assert.deepEqual(g.players.a.research, {});
 });
+
+test('perder la capital elimina al jugador y su imperio pasa a ser neutral', () => {
+  const g = game();
+  // b tiene su capital (Japón) y además Corea del Sur.
+  g.countries.KOR.owner = 'b';
+  g.countries.KOR.units = { ...emptyUnits(), infantry: 7 };
+  g.countries.JPN.units = { ...emptyUnits(), infantry: 1 };
+  g.countries.CHN.owner = 'a';
+  g.countries.CHN.units = { ...emptyUnits(), infantry: 40, navy: 2 };
+  g.relations['a|b'] = { state: 'war' };
+  const { army, error } = moveArmy(g, 'a', 'CHN', 'JPN', { infantry: 40, navy: 2 }, T0);
+  assert.equal(error, undefined);
+  const { events } = tickGame(g, players, army.arriveAt, () => 0.5);
+  assert.equal(g.countries.JPN.owner, 'a');
+  assert.equal(g.players.b.eliminated, true, 'sin capital, b queda eliminado');
+  assert.equal(g.countries.KOR.owner, null, 'sus demás países pasan a ser neutrales');
+  assert.ok(g.countries.KOR.units.infantry >= 7, 'y conservan su guarnición');
+  const elim = events.find((e) => e.type === 'eliminated');
+  assert.equal(elim.reason, 'capital');
+  assert.equal(elim.by, 'a');
+});
+
+test('equilibrio: cazas más lentos, barcos más rápidos e infantería algo mejor', () => {
+  assert.ok(UNITS.aircraft.speed <= 400, 'el caza no es tan rápido');
+  assert.ok(UNITS.navy.speed >= 70, 'los barcos van más rápido por mar');
+  assert.ok(UNITS.infantry.attack > 1 && UNITS.infantry.defense > 1.5);
+});

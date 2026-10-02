@@ -692,6 +692,8 @@ function arrive(game, army, now, rng) {
     if (defender && game.homes[defender] === army.to) {
       delete game.homes[defender];
       event.capitalTaken = true;
+      // Perder la capital elimina al jugador (se comprueba justo después de las llegadas).
+      (game.fallen ??= {})[defender] = army.owner;
     }
   } else {
     target.units = result.defendersLeft;
@@ -700,22 +702,39 @@ function arrive(game, army, now, rng) {
   return event;
 }
 
-// Un jugador sin países ni tropas en marcha queda eliminado.
+/**
+ * Queda eliminado quien pierde su capital o se queda sin países ni tropas en marcha.
+ * Al caer la capital, el resto de su imperio se desmorona: sus países pasan a ser neutrales
+ * (conservan sus tropas como guarnición) y sus ejércitos en marcha se disuelven.
+ */
 function checkEliminations(game, now) {
   const events = [];
   for (const [pid, player] of Object.entries(game.players)) {
     if (player.eliminated) continue;
+    const lostCapital = !game.homes[pid];
     const hasCountry = Object.values(game.countries).some((c) => c.owner === pid);
     const hasArmy = game.armies.some((a) => a.owner === pid);
-    if (!hasCountry && !hasArmy) {
-      player.eliminated = true;
-      player.research = {};
-      forgetPlayer(game, pid);
-      forgetOffers(game, pid);
-      const event = { id: ++game.seq, ts: now, type: 'eliminated', player: pid };
-      pushEvent(game, event);
-      events.push(event);
+    if (!lostCapital && (hasCountry || hasArmy)) continue;
+
+    player.eliminated = true;
+    player.research = {};
+    for (const c of Object.values(game.countries)) {
+      if (c.owner !== pid) continue;
+      c.owner = null;
+      c.training = [];
+      c.developing = null;
+      c.constructing = null;
     }
+    game.armies = game.armies.filter((a) => a.owner !== pid);
+    game.strikes = game.strikes.filter((s) => s.owner !== pid);
+    forgetPlayer(game, pid);
+    forgetOffers(game, pid);
+    const event = {
+      id: ++game.seq, ts: now, type: 'eliminated', player: pid,
+      ...(lostCapital ? { reason: 'capital', by: game.fallen?.[pid] ?? null } : {}),
+    };
+    pushEvent(game, event);
+    events.push(event);
   }
   return events;
 }

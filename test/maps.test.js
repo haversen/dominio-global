@@ -69,7 +69,7 @@ test('movimiento real: distancias en km y velocidades en km/h, con varios ritmos
   const jets = { ...emptyUnits(), jet: 1 };
   const realHours = travelMs(esp, fra, infantry, 1) / 3_600_000;
   assert.ok(realHours > 24 && realHours < 70, `a pie tarda ${realHours} h, como en la vida real`);
-  assert.ok(travelMs(esp, fra, jets, 1) < travelMs(esp, fra, infantry, 1) / 30, 'los aviones son mucho más rápidos');
+  assert.ok(travelMs(esp, fra, jets, 1) < travelMs(esp, fra, infantry, 1) / 10, 'los aviones son mucho más rápidos');
 
   const fast = travelMs(esp, fra, infantry, TROOP_PACES.fast.scale);
   assert.ok(Math.abs(fast - travelMs(esp, fra, infantry, 1) / TROOP_PACES.fast.scale) < 2, 'el ritmo escala el tiempo');

@@ -8,7 +8,7 @@ export const UNITS = {
   infantry: {
     label: 'Infantería', icon: '♟', class: 'infantry', domain: 'land', tier: 1,
     cost: { money: 8, food: 3 }, upkeep: { food: 0.3 },
-    attack: 1, defense: 1.5, speed: 20, trainMs: 4_000,
+    attack: 1.3, defense: 1.8, speed: 20, trainMs: 4_000,
   },
   mech: {
     label: 'Infantería mecanizada', icon: '♞', class: 'infantry', domain: 'land', tier: 2,
@@ -40,33 +40,33 @@ export const UNITS = {
   aircraft: {
     label: 'Cazas', icon: '✈', class: 'air', domain: 'air', tier: 1,
     cost: { money: 32, industry: 10, oil: 5 }, upkeep: { oil: 0.8 },
-    attack: 5, defense: 2, speed: 700, trainMs: 12_000, interceptor: 1,
+    attack: 5, defense: 2, speed: 320, trainMs: 12_000, interceptor: 1,
   },
   bomber: {
     label: 'Bombarderos', icon: '✠', class: 'air', domain: 'air', tier: 2,
     cost: { money: 50, industry: 15, oil: 8 }, upkeep: { oil: 1.2 },
-    attack: 9, defense: 1, speed: 550, trainMs: 15_000,
+    attack: 9, defense: 1, speed: 260, trainMs: 15_000,
   },
   jet: {
     label: 'Cazas a reacción', icon: '➶', class: 'air', domain: 'air', tier: 3,
     cost: { money: 70, industry: 20, oil: 10 }, upkeep: { oil: 1.5 },
-    attack: 8, defense: 5, speed: 1300, trainMs: 18_000, interceptor: 2,
+    attack: 8, defense: 5, speed: 520, trainMs: 18_000, interceptor: 2,
   },
   // Marina
   navy: {
     label: 'Destructores', icon: '⚓', class: 'naval', domain: 'sea', tier: 1,
     cost: { money: 26, industry: 8, oil: 4 }, upkeep: { oil: 0.5 },
-    attack: 3, defense: 3, speed: 45, trainMs: 12_000,
+    attack: 3, defense: 3, speed: 80, trainMs: 12_000,
   },
   submarine: {
     label: 'Submarinos', icon: '◒', class: 'naval', domain: 'sea', tier: 2,
     cost: { money: 40, industry: 12, oil: 6 }, upkeep: { oil: 0.7 },
-    attack: 6, defense: 2, speed: 35, trainMs: 14_000,
+    attack: 6, defense: 2, speed: 65, trainMs: 14_000,
   },
   carrier: {
     label: 'Portaaviones', icon: '⛴', class: 'naval', domain: 'sea', tier: 3,
     cost: { money: 90, industry: 30, oil: 12 }, upkeep: { oil: 2 },
-    attack: 5, defense: 8, speed: 50, trainMs: 20_000, interceptor: 1,
+    attack: 5, defense: 8, speed: 75, trainMs: 20_000, interceptor: 1,
   },
 };
 

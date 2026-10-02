@@ -89,7 +89,7 @@ No hay turnos: cada jugador actúa desde su dispositivo cuando quiere y el servi
 
 ### Movimiento de las tropas, como en la vida real
 
-El tiempo de viaje es la **distancia real en km** entre los dos países (calculada con sus coordenadas, +15 % porque los caminos no son rectos) dividida por la **velocidad real en km/h** de la unidad más lenta: infantería 20 km/h, tanques 25, carros modernos 40, barcos 45, cazas 700, reactores 1300… Cruzar el mar añade un 30 %.
+El tiempo de viaje es la **distancia real en km** entre los dos países (calculada con sus coordenadas, +15 % porque los caminos no son rectos) dividida por la **velocidad real en km/h** de la unidad más lenta: infantería 20 km/h, tanques 25, carros modernos 40, barcos 65-80, bombarderos 260, cazas 320, reactores 520… Cruzar el mar añade un 30 %.
 
 En la sala se elige el ritmo:
 
@@ -128,7 +128,7 @@ Doce tipos de unidad en cuatro ramas. El nivel I viene de serie; los niveles II 
 
 | Rama        | Nivel I            | Nivel II                 | Nivel III                     |
 |-------------|--------------------|--------------------------|-------------------------------|
-| Infantería  | Infantería (1/1,5) | Infantería mecanizada (2/2,5) | Fuerzas especiales (4/3, ignoran el terreno) |
+| Infantería  | Infantería (1,3/1,8) | Infantería mecanizada (2/2,5) | Fuerzas especiales (4/3, ignoran el terreno) |
 | Blindados   | Tanques (4/3)      | Tanques pesados (7/6)    | Carros de combate modernos (10/8) |
 | Aviación    | Cazas (5/2)        | Bombarderos (9/1)        | Cazas a reacción (8/5)        |
 | Marina      | Destructores (3/3) | Submarinos (6/2)         | Portaaviones (5/8)            |
@@ -139,7 +139,7 @@ Doce tipos de unidad en cuatro ramas. El nivel I viene de serie; los niveles II 
 - Al llegar a un país ajeno hay batalla: fuerza de cada bando × terreno × capital (+25 %) × desarrollo × desembarco (−25 %) × suministro × azar (±20 %). Si gana el atacante, conquista el país (que pierde un nivel de desarrollo); si no, sus tropas se pierden. El ganador sufre bajas según lo igualada que estuviera la batalla.
 - Sin alimentos o sin petróleo, las unidades que dependen de ellos rinden a la mitad.
 - Los países neutrales tienen guarnición propia según su tamaño y economía.
-- Perder la capital quita su bonificación. Un jugador sin países ni ejércitos queda eliminado.
+- **Si te conquistan la capital, quedas eliminado**: el resto de tus países pasa a ser neutral (con sus tropas como guarnición) y tus ejércitos en marcha se disuelven. También queda eliminado quien se queda sin países ni ejércitos.
 
 ### Diplomacia, comercio y tecnología
 

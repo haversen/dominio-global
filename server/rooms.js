@@ -662,7 +662,9 @@ export class RoomManager {
   #announceEvent(room, event) {
     const name = (pid) => (pid ? room.players.get(pid)?.name ?? 'Un jugador' : 'las fuerzas neutrales');
     if (event.type === 'eliminated') {
-      this.#system(room, `☠ ${name(event.player)} ha sido eliminado`);
+      this.#system(room, event.reason === 'capital'
+        ? `☠ ${name(event.by)} ha tomado la capital de ${name(event.player)}: ${name(event.player)} queda eliminado y sus países pasan a ser neutrales`
+        : `☠ ${name(event.player)} ha sido eliminado`);
       return;
     }
     if (event.type === 'pact-ended') {
