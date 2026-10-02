@@ -554,6 +554,7 @@ test('red: el formato compacto de los países se decodifica sin pérdidas', () =
     assert.deepEqual(decoded[id], {
       owner: c.owner, level: c.level, units: c.units, training: c.training, developing: c.developing,
       buildings: c.buildings, constructing: c.constructing,
+      ...(c.owner && c.stability !== undefined ? { stability: c.stability } : {}),
     }, id);
   }
   assert.ok(JSON.stringify(encodeCountries(game.countries)).length < JSON.stringify(game.countries).length / 3);
@@ -570,6 +571,8 @@ function richGame(homes = { a: 'ESP', b: 'JPN' }) {
   for (const p of Object.values(game.players)) {
     p.resources = { money: 100_000, food: 100_000, oil: 100_000, industry: 100_000 };
   }
+  // Acceso a los recursos estratégicos (caucho, tierras raras y uranio) para el jugador a.
+  for (const id of ['LKA', 'GRL', 'NAM']) game.countries[id].owner = 'a';
   return game;
 }
 

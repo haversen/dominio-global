@@ -4,6 +4,8 @@ import { WorldMap } from './map.js';
 import { $, h, toast, guardTaps, durationText, avatarEl } from './dom.js';
 import { leaderBonus, discountCost } from '/shared/leaders.js';
 import { inScenario, scenarioOf } from '/shared/scenarios.js';
+import { STRATEGIC, strategicOf, needOf, hasAccess } from '/shared/strategic.js';
+import { SPY_MISSIONS, SPY_MISSION_IDS } from '/shared/espionage.js';
 import {
   BUILDINGS, BUILDING_TYPES, MAX_BUILDING_LEVEL, buildingSlots, usedSlots, buildingCost, buildingMs, buildingIncome,
   buildError,
@@ -277,6 +279,7 @@ export class GameView {
       const owner = players.get(c.owner);
       if (owner) colors[countryId] = { fill: owner.color, classes: ['owned', c.owner === me ? 'mine' : ''] };
       if (c.hidden) (classes[countryId] ??= []).push('fogged');
+      if (c.owner === me && c.stability < 25) (classes[countryId] ??= []).push('unstable');
       if (game.phase === 'active' && c.hidden) {
         // Con niebla, de los países enemigos solo se sabe que existen: «?».
         if (owner) badges.push({ countryId, text: '?', color: owner.color, always: true, capital: game.homes[owner.id] === countryId });
@@ -356,6 +359,22 @@ export class GameView {
         const name = players.get(e.player)?.name ?? 'Un jugador';
         if (e.player === me) play('defeat');
         toast(e.player === me ? 'Has sido eliminado' : `${name} ha sido eliminado`, e.player === me ? 'error' : 'info', 5000);
+        continue;
+      }
+      if (e.type === 'revolt') {
+        this.map.flash(e.country, 'conquest');
+        if (e.player === me) {
+          play('lost');
+          toast(`✊ ¡Revuelta! ${world.byId.get(e.country).name} se ha sublevado y lo has perdido`, 'error', 6000);
+        }
+        continue;
+      }
+      if (e.type === 'spy') {
+        if (e.owner === me && (e.success || e.caught)) {
+          toast(e.caught ? `🕵️ Has capturado a un espía de ${players.get(e.by)?.name ?? 'alguien'} en ${world.byId.get(e.country).name}`
+            : `🕵️ Espionaje enemigo en ${world.byId.get(e.country).name}: ${e.damage ?? (e.mission === 'steal' ? 'te han robado planos' : 'agitadores en las calles')}`,
+          e.caught ? 'success' : 'error', 6000);
+        }
         continue;
       }
       if (e.type !== 'battle') continue;
@@ -461,6 +480,7 @@ export class GameView {
           : 'Selecciona uno de tus países para reclutar tropas y enviarlas a sus vecinos. Con un país tuyo seleccionado, clic derecho sobre un vecino envía las tropas al instante.'),
         mine.length > 0 && h('h4', { class: 'panel-sub' }, 'Tus territorios'),
         mine.length > 0 && h('div', { class: 'chips' }, mine.map((m) => this.#countryChip(m, ctx))),
+        self?.weariness > 0 && h('p', { class: 'weariness' }, `😓 Cansancio de guerra: tus ingresos bajan un ${self.weariness} %. Se recupera poco a poco sin perder tropas.`),
         self && h('h4', { class: 'panel-sub' }, 'Balance por minuto'),
         self && this.#resourceGrid(Object.fromEntries(RESOURCES.map((r) => [r, self.income[r] - self.upkeep[r]])), true),
       );
@@ -498,12 +518,16 @@ export class GameView {
         state.developing && h('dd', {}, `nivel ${state.developing.toLevel} en ${secondsText(state.developing.readyAt - now)}`),
         state.contaminatedUntil > now && h('dt', { class: 'danger-text' }, '☢ Contaminado'),
         state.contaminatedUntil > now && h('dd', { class: 'danger-text' }, `sin producción ${secondsText(state.contaminatedUntil - now)}`)),
+      strategicOf(c.id).length > 0 && h('p', { class: 'strategic-line' }, 'Recursos estratégicos: ',
+        strategicOf(c.id).map((r) => h('span', { class: 'chip', title: 'Necesario para tropas y armas avanzadas' }, `${STRATEGIC[r].icon} ${STRATEGIC[r].label}`))),
+      owner && game.phase === 'active' && (owner.id === me || !state.hidden) && this.#stabilityLine(state),
       game.phase === 'active' && this.#armySection(state, now),
       this.#movesSection(c, ctx, now),
       isMine && this.#recruitSection(c, ctx),
       isMine && this.#sendSection(c, state, ctx),
       !isMine && game.phase === 'active' && this.#attackFromSection(c, ctx),
       !isMine && game.phase === 'active' && this.#strikeSection(c, ctx, now),
+      !isMine && game.phase === 'active' && !game.eliminated?.[me] && this.#spySection(c, ctx, now),
       h('h4', { class: 'panel-sub' }, 'Producción por minuto'),
       this.#resourceGrid(this.#countryProduction(c, state, Boolean(homeOf))),
       (homeOf || usedSlots(state.buildings) > 0) && h('p', { class: 'muted small' },
@@ -574,14 +598,15 @@ export class GameView {
       h('div', { class: 'recruit-list' }, available.map((t) => {
         const unit = UNITS[t];
         const blocked = unit.domain === 'sea' && !c.coastal;
+        const missing = this.#missingStrategic(this.#ctx(), { unit: t });
         const unitCost = discountCost(unit.cost, leaderBonus(self?.president).cost);
         const buy = (n) => {
           const cost = Object.fromEntries(Object.entries(unitCost).map(([r, v]) => [r, v * n]));
-          const ok = !blocked && self && canAfford(self.resources, cost);
+          const ok = !blocked && !missing && self && canAfford(self.resources, cost);
           return h('button', {
             class: 'btn btn-xs',
             disabled: !ok,
-            title: blocked ? 'Solo en países con costa' : `Coste: ${costText(cost)}`,
+            title: blocked ? 'Solo en países con costa' : missing ? `Necesitas ${STRATEGIC[missing].label.toLowerCase()}` : `Coste: ${costText(cost)}`,
             onClick: async (e) => {
               e.currentTarget.disabled = true;
               const res = await request('game:recruit', { countryId: c.id, type: t, count: n });
@@ -592,9 +617,53 @@ export class GameView {
         };
         return h('div', { class: 'recruit-row' },
           h('span', { class: 'unit-icon' }, unit.icon),
-          h('span', { class: 'recruit-name' }, unit.label, h('small', {}, blocked ? 'requiere costa' : costText(unitCost))),
+          h('span', { class: 'recruit-name' }, unit.label, h('small', {}, blocked ? 'requiere costa'
+            : missing ? `falta ${STRATEGIC[missing].icon} ${STRATEGIC[missing].label.toLowerCase()}` : costText(unitCost))),
           buy(1), buy(5));
       })));
+  }
+
+  // Espionaje contra un país ajeno.
+  #spySection(c, { game, self }, now) {
+    const owner = game.countries[c.id].owner;
+    return h('div', {},
+      h('h4', { class: 'panel-sub' }, '🕵️ Espionaje'),
+      h('div', { class: 'recruit-list' }, SPY_MISSION_IDS.map((id) => {
+        const m = SPY_MISSIONS[id];
+        const cooldown = (self?.cooldowns?.[`spy:${id}`] ?? 0) - now;
+        let error = null;
+        if (m.needsPlayer && !owner) error = 'Solo contra otro jugador';
+        else if (cooldown > 0) error = `Preparando: ${secondsText(cooldown)}`;
+        else if (!self || !canAfford(self.resources, m.cost)) error = 'No tienes recursos suficientes';
+        return h('div', { class: 'recruit-row', title: m.desc },
+          h('span', { class: 'unit-icon' }, m.icon),
+          h('span', { class: 'recruit-name' }, m.label,
+            h('small', {}, error ?? `${costText(m.cost)} · éxito ${Math.round(m.success * 100)} %`)),
+          h('button', {
+            class: 'btn btn-xs',
+            disabled: Boolean(error),
+            onClick: async (e) => {
+              e.currentTarget.disabled = true;
+              const res = await request('game:spy', { mission: id, countryId: c.id });
+              if (!res.ok) return toast(res.error, 'error');
+              toast(`${res.success ? '🕵️' : '⚠'} ${res.text}`, res.success ? 'success' : 'error', 5000);
+              play(res.success ? 'notify' : 'battle');
+            },
+          }, 'Enviar'));
+      })),
+      h('p', { class: 'muted small' }, 'Si una misión falla, tu espía puede ser capturado y todos sabrán que has sido tú.'));
+  }
+
+  // Estabilidad de un país propio (riesgo de revuelta).
+  #stabilityLine(state) {
+    if (state.stability === undefined) return null;
+    const v = state.stability;
+    const level = v < 25 ? 'danger' : v < 50 ? 'warn' : 'ok';
+    return h('div', { class: `stability stability-${level}`, title: 'Sube con el tiempo y con al menos 5 tropas dentro. Por debajo del 25 % puede haber revueltas.' },
+      h('span', {}, `✊ Estabilidad ${v} %`),
+      h('div', { class: 'stability-bar' }, h('i', { style: { width: `${v}%` } })),
+      v < 25 && h('small', {}, '⚠ Riesgo de revuelta: deja tropas en el país'),
+      v < 100 && v >= 25 && h('small', { class: 'muted' }, `Produce al ${Math.round(50 + v / 2)} %`));
   }
 
   // Bombas disponibles contra un país ajeno.
@@ -614,7 +683,10 @@ export class GameView {
         if (rel !== 'war') error = `No estás en guerra con ${players.get(owner)?.name}`;
         else if (hops > spec.range) error = `Fuera de alcance (máx. ${spec.range} países)`;
         else if (cooldown > 0) error = `Recargando: ${secondsText(cooldown)}`;
-        else if (!canAfford(self.resources, spec.cost)) error = 'No tienes recursos suficientes';
+        else if (this.#missingStrategic({ game, me }, { weapon: w })) {
+          const need = STRATEGIC[this.#missingStrategic({ game, me }, { weapon: w })];
+          error = `Falta ${need.icon} ${need.label.toLowerCase()}`;
+        } else if (!canAfford(self.resources, spec.cost)) error = 'No tienes recursos suficientes';
         return h('div', { class: 'recruit-row' },
           h('span', { class: 'unit-icon' }, spec.icon),
           h('span', { class: 'recruit-name' }, spec.label,
@@ -658,6 +730,15 @@ export class GameView {
     const send = { ...units };
     if (send.infantry > 0 && totalUnits(units) > 1) send.infantry -= 1;
     return send;
+  }
+
+  // Recurso estratégico que falta para una unidad o arma (o null).
+  #missingStrategic({ game, me }, what) {
+    const need = needOf(what);
+    if (!need) return null;
+    const friends = new Set([me, ...Object.keys(game.eliminated ?? {})
+      .filter((pid) => pid !== me && relationOf(game.relations, me, pid).state === 'alliance')]);
+    return hasAccess(need, (id) => game.countries[id]?.owner, friends, (id) => playable(game, id)) ? null : need;
   }
 
   // Tiempo de viaje como lo calcula el servidor (ritmo, logística y modificaciones del árbol).

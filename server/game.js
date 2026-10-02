@@ -21,6 +21,8 @@ import { standings, checkVictory } from './victory.js';
 import { encodeCountries } from '../shared/wire.js';
 import { DEFAULT_PRESIDENT, PRESIDENTS, leaderBonus, discountCost } from '../shared/leaders.js';
 import { createMarket, tickMarket, forgetOffers, publicMarket } from './market.js';
+import { needOf, hasAccess, missingText } from '../shared/strategic.js';
+import { runSpyMission } from './espionage.js';
 
 // Mapa del mundo generado por scripts/build-world.js.
 export const WORLD = JSON.parse(readFileSync(new URL('../shared/world.json', import.meta.url), 'utf8'));
@@ -31,6 +33,21 @@ const TOTAL_AREA = Object.fromEntries(Object.keys(SCENARIOS).map((id) => [id,
 const playable = (game, countryId) => inScenario(game.scenario, countryId);
 
 export const PICK_DURATION_MS = 60_000;
+
+// Estabilidad de los países conquistados (0-100) y rebeliones.
+export const STABILITY = {
+  start: 100,           // capital y países iniciales
+  fromNeutral: 40,      // recién conquistado a la IA
+  fromPlayer: 25,       // recién conquistado a otro jugador
+  perMinute: 4,         // se recupera con el tiempo...
+  garrisonBonus: 4,     // ...y más rápido con al menos 5 tropas dentro
+  emptyPenalty: 6,      // sin tropas se desmorona
+  strikeHit: 20,        // un bombardeo baja la estabilidad
+  revoltBelow: 25,      // por debajo de esto puede haber revueltas
+  checkMs: 30_000,      // cada cuánto se comprueba (velocidad normal)
+};
+// Cansancio de guerra: cada unidad perdida cansa a la población y baja los ingresos.
+export const WEARINESS = { perUnitLost: 0.004, max: 0.4, decayPerMinute: 0.02 };
 export const MAX_BATCH = 50; // unidades máximas por orden de reclutamiento
 const MIN_START_AREA_KM2 = 150_000;
 const PREFERRED_START_DISTANCE = 3;
@@ -162,10 +179,12 @@ export function finishPicking(game, playerIds, rng = Math.random, now = Date.now
     game.homes[id] = countryId;
     country.owner = id;
     country.units = startingArmy(COUNTRIES.get(countryId));
+    country.stability = STABILITY.start;
   }
   game.picks = {};
   game.pickDeadline = null;
   game.phase = 'active';
+  game.nextStabilityCheck = now + STABILITY.checkMs;
   game.startedAt = now;
   game.lastTick = now;
   if (game.ai) {
@@ -185,8 +204,11 @@ function economyTotals(game) {
     const t = entry(c.owner);
     // Un país contaminado por una bomba nuclear no produce nada.
     if (!(c.contaminatedUntil > game.lastTick)) {
-      addResources(t.income, countryIncome(COUNTRIES.get(id), c.level, game.homes[c.owner] === id));
-      addResources(t.income, buildingIncome(c.buildings));
+      // Un país inestable produce menos (al 50 % con estabilidad 0).
+      const k = stabilityFactor(c);
+      const income = countryIncome(COUNTRIES.get(id), c.level, game.homes[c.owner] === id);
+      addResources(income, buildingIncome(c.buildings));
+      for (const r of RESOURCES) t.income[r] += income[r] * k;
     }
     addUnits(t.units, c.units);
   }
@@ -195,9 +217,28 @@ function economyTotals(game) {
 }
 
 const bonusOf = (game, playerId) => leaderBonus(game.players[playerId]?.president);
+const stabilityFactor = (c) => 0.5 + (c.stability ?? 100) / 200;
+
+/** El jugador y sus aliados (comparten recursos estratégicos y visión). */
+export function friendsOf(game, playerId) {
+  const friends = new Set([playerId]);
+  for (const pid of Object.keys(game.players)) {
+    if (pid !== playerId && relationOf(game.relations, playerId, pid).state === 'alliance') friends.add(pid);
+  }
+  return friends;
+}
+
+/** Error si al jugador le falta el recurso estratégico que necesita una unidad o arma. */
+export function strategicError(game, playerId, what) {
+  const need = needOf(what);
+  if (!need) return null;
+  const ok = hasAccess(need, (id) => game.countries[id]?.owner, friendsOf(game, playerId), (id) => playable(game, id));
+  return ok ? null : missingText(need);
+}
 
 function applyIncomeTech(game, playerId, raw) {
-  const mult = techBonus.income(game.players[playerId]?.tech) * bonusOf(game, playerId).income;
+  const weariness = game.players[playerId]?.weariness ?? 0;
+  const mult = techBonus.income(game.players[playerId]?.tech) * bonusOf(game, playerId).income * (1 - weariness);
   const total = emptyResources();
   for (const r of RESOURCES) total[r] = (raw?.[r] ?? 0) * mult;
   return total;
@@ -243,6 +284,8 @@ export function recruit(game, playerId, countryId, type, count, now = Date.now()
   }
   if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH) return `Puedes reclutar de 1 a ${MAX_BATCH} unidades`;
   if (unit.domain === 'sea' && !COUNTRIES.get(countryId).coastal) return 'Los barcos solo se construyen en países con costa';
+  const missing = strategicError(game, playerId, { unit: type });
+  if (missing) return missing;
 
   const cost = scaleCost(discountCost(unit.cost, bonusOf(game, playerId).cost), count);
   const player = game.players[playerId];
@@ -378,6 +421,8 @@ export function launchStrike(game, playerId, weapon, targetId, now = Date.now())
     if (rel !== 'war') return { error: 'Solo puedes bombardear a jugadores con los que estás en guerra' };
   }
   if ((player.cooldowns[weapon] ?? 0) > now) return { error: 'Esa arma todavía se está recargando' };
+  const missing = strategicError(game, playerId, { weapon });
+  if (missing) return { error: missing };
   const reach = hopsFromPlayer(game, playerId, spec.range).get(targetId);
   if (!reach) return { error: `Fuera de alcance: ${spec.label} llega a ${spec.range} país(es) de distancia` };
   if (!canAfford(player.resources, spec.cost)) return { error: 'No tienes recursos suficientes' };
@@ -421,6 +466,7 @@ function strikeHits(game, strike, now, rng) {
     event.levelsLost = Math.min(levelsLost, target.level - 1);
     target.level -= event.levelsLost;
     target.buildings = damageBuildings(target.buildings, levelsLost);
+    if (target.owner) target.stability = Math.max(0, (target.stability ?? 100) - STABILITY.strikeHit * (spec.contaminationMs ? 2.5 : 1));
     if (spec.contaminationMs) {
       target.contaminatedUntil = now + Math.round(spec.contaminationMs / game.speed);
       target.buildings = {};
@@ -428,6 +474,7 @@ function strikeHits(game, strike, now, rng) {
     }
     const stats = game.players[target.owner]?.stats;
     if (stats) stats.unitsLost += totalUnits(event.losses);
+    addWeariness(game, target.owner, totalUnits(event.losses));
   }
   pushEvent(game, event);
   return event;
@@ -438,6 +485,14 @@ function playerSpeed(game, playerId) {
   return game.speed * (game.pace ?? paceScale()) * techBonus.speed(game.players[playerId]?.tech);
 }
 const speedMods = (game, playerId) => treeBonus(game.players[playerId]?.unlocked).speed;
+
+/** Misión de espionaje. Devuelve { error } o el resultado (ver espionage.js). */
+export function spy(game, playerId, mission, countryId, now = Date.now(), rng = Math.random) {
+  if (game.countries[countryId] && !playable(game, countryId)) return { error: 'Ese país no forma parte de este mapa' };
+  const result = runSpyMission(game, playerId, mission, countryId, { now, rng, COUNTRIES, nextId: () => ++game.seq });
+  if (result.event) pushEvent(game, result.event);
+  return result;
+}
 
 /** Envía tropas a un país vecino. Devuelve { error } o { army }. */
 export function moveArmy(game, playerId, fromId, toId, rawUnits, now = Date.now()) {
@@ -510,6 +565,15 @@ export function tickGame(game, playerIds, now = Date.now(), rng = Math.random) {
       for (const r of RESOURCES) {
         player.resources[r] = Math.max(0, player.resources[r] + (income[r] - upkeep[r]) * minutes);
       }
+    }
+  }
+
+  if (minutes > 0) {
+    const revolts = tickStability(game, minutes, now, rng);
+    if (revolts.length) {
+      events.push(...revolts);
+      events.push(...checkEliminations(game, now));
+      changed = true;
     }
   }
 
@@ -671,6 +735,8 @@ function arrive(game, army, now, rng) {
 
   const attackerStats = game.players[army.owner]?.stats;
   const defenderStats = game.players[defender]?.stats;
+  addWeariness(game, army.owner, totalUnits(event.attackerLosses));
+  addWeariness(game, defender, totalUnits(event.defenderLosses));
   if (attackerStats) {
     attackerStats[result.attackerWins ? 'battlesWon' : 'battlesLost']++;
     attackerStats.unitsLost += totalUnits(event.attackerLosses);
@@ -685,6 +751,8 @@ function arrive(game, army, now, rng) {
     target.formerNeutral = defender === null; // la IA intentará recuperarlo
     target.conqueredAt = now;
     target.owner = army.owner;
+    // La población de un país recién conquistado no está contenta: puede sublevarse.
+    target.stability = army.owner ? (defender ? STABILITY.fromPlayer : STABILITY.fromNeutral) : undefined;
     target.units = result.attackersLeft;
     target.training = [];
     target.developing = null;
@@ -735,6 +803,51 @@ function checkEliminations(game, now) {
       id: ++game.seq, ts: now, type: 'eliminated', player: pid,
       ...(lostCapital ? { reason: 'capital', by: game.fallen?.[pid] ?? null } : {}),
     };
+    pushEvent(game, event);
+    events.push(event);
+  }
+  return events;
+}
+
+function addWeariness(game, playerId, unitsLost) {
+  const player = game.players[playerId];
+  if (!player || !unitsLost) return;
+  player.weariness = Math.min(WEARINESS.max, (player.weariness ?? 0) + unitsLost * WEARINESS.perUnitLost);
+}
+
+/**
+ * Estabilidad: se recupera con el tiempo y con guarnición; sin tropas se desmorona.
+ * Los países muy inestables (no capitales) pueden sublevarse y volver a ser neutrales.
+ */
+function tickStability(game, minutes, now, rng) {
+  const events = [];
+  for (const [id, c] of Object.entries(game.countries)) {
+    if (!c.owner || !game.players[c.owner]) continue;
+    const garrison = totalUnits(c.units);
+    let delta = STABILITY.perMinute;
+    if (garrison >= 5) delta += STABILITY.garrisonBonus;
+    if (garrison === 0) delta -= STABILITY.perMinute + STABILITY.emptyPenalty;
+    c.stability = Math.max(0, Math.min(100, (c.stability ?? 100) + delta * minutes));
+  }
+  for (const p of Object.values(game.players)) {
+    if (p.weariness) p.weariness = Math.max(0, p.weariness - WEARINESS.decayPerMinute * minutes);
+  }
+  if (now < (game.nextStabilityCheck ?? 0)) return events;
+  game.nextStabilityCheck = now + STABILITY.checkMs / game.speed;
+  for (const [id, c] of Object.entries(game.countries)) {
+    if (!c.owner || game.homes[c.owner] === id || c.stability >= STABILITY.revoltBelow) continue;
+    const chance = ((STABILITY.revoltBelow - c.stability) / 100) * 0.5;
+    if (rng() >= chance) continue;
+    const owner = c.owner;
+    // Revuelta: el país vuelve a ser neutral y los rebeldes se suman a lo que quede de guarnición.
+    c.owner = null;
+    c.training = [];
+    c.developing = null;
+    c.constructing = null;
+    c.stability = undefined;
+    c.units.infantry += 3 + Math.floor(rng() * 4);
+    c.formerNeutral = false;
+    const event = { id: ++game.seq, ts: now, type: 'revolt', country: id, player: owner };
     pushEvent(game, event);
     events.push(event);
   }
@@ -841,6 +954,7 @@ export function privateGame(game, playerId) {
     supply: supplyOf(game, playerId),
     eliminated: player.eliminated,
     president: player.president,
+    weariness: Math.round((player.weariness ?? 0) * 100), // cansancio de guerra en %
     tech: player.tech,
     unlocked: player.unlocked,
     cooldowns: player.cooldowns,

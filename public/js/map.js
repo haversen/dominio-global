@@ -2,6 +2,7 @@
 // El zoom se implementa cambiando el viewBox, así el SVG siempre se ve nítido.
 
 import { terrainOf, UNITS, UNIT_TYPES } from '/shared/military.js';
+import { STRATEGIC, strategicOf } from '/shared/strategic.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MAX_ZOOM = 14;
@@ -234,6 +235,13 @@ export class WorldMap {
 
       const text = svg('text', { x: c.cx, y: c.cy });
       text.textContent = c.name;
+      // Recursos estratégicos del país, debajo del nombre.
+      const strategic = strategicOf(c.id);
+      if (strategic.length) {
+        const icons = svg('tspan', { x: c.cx, dy: '1.25em', class: 'label-res' });
+        icons.textContent = strategic.map((r) => STRATEGIC[r].icon).join('');
+        text.append(icons);
+      }
       labels.append(text);
       // La etiqueta solo se muestra cuando el país es más ancho que su nombre en pantalla.
       this.labels.push({ el: text, id: c.id, widthUnits: c.lw, textPx: c.name.length * LABEL_CHAR_PX });

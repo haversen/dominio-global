@@ -2,7 +2,7 @@ import { generateCode, normalizeCode, randomId, sanitizeName, sanitizeChat } fro
 import { defaultSettings, applySettingsPatch } from '../shared/settings.js';
 import {
   createGame, pickCountry, allPicked, finishPicking, releasePlayer, tickGame, publicGame,
-  privateGameWithStandings, developCountry, recruit, moveArmy, research, researchNode, launchStrike, build,
+  privateGameWithStandings, developCountry, recruit, moveArmy, research, researchNode, launchStrike, build, spy,
   checkEnd, currentStandings, COUNTRIES,
 } from './game.js';
 import { trade, postOffer, acceptOffer, cancelOffer } from './market.js';
@@ -352,6 +352,16 @@ export class RoomManager {
       this.#system(room, `☢ ¡ALERTA! ${player.name} ha lanzado una bomba nuclear contra ${COUNTRIES.get(targetId).name}`);
     }
     return strike;
+  }
+
+  // ---------- Espionaje ----------
+
+  spy(room, player, mission, countryId) {
+    this.#requirePlaying(room);
+    const result = spy(room.game, player.id, mission, countryId);
+    if (result.error) throw new GameError('INVALID_ACTION', result.error);
+    if (result.event) this.#announceEvent(room, result.event);
+    return result;
   }
 
   // ---------- Mercado ----------
@@ -722,6 +732,22 @@ export class RoomManager {
     }
     if (event.type === 'strike' && event.defender && !event.intercepted) {
       this.#notify(room, event.defender, `💣 Bombardeo en ${COUNTRIES.get(event.country).name}`, `${name(event.attacker)} ha alcanzado tu país.`, `strike-${event.country}`);
+    }
+    if (event.type === 'revolt') {
+      this.#notify(room, event.player, `✊ Revuelta en ${COUNTRIES.get(event.country).name}`, 'La población se ha sublevado y has perdido el país.', `revolt-${event.country}`);
+      this.#system(room, `✊ ¡Revuelta! ${COUNTRIES.get(event.country).name} se subleva contra ${name(event.player)} y se declara independiente`);
+      return;
+    }
+    if (event.type === 'spy') {
+      const country = COUNTRIES.get(event.country).name;
+      if (event.caught) {
+        this.#system(room, `🕵️ Un espía de ${name(event.by)} ha sido capturado en ${country}`);
+      } else if (event.success && event.owner) {
+        const what = { sabotage: `sabotaje (${event.damage})`, steal: 'robo de planos tecnológicos', incite: 'agitadores que fomentan la revuelta' }[event.mission];
+        this.#notify(room, event.owner, `🕵️ Espionaje en ${country}`, `Un espía desconocido: ${what}.`, `spy-${event.country}`);
+        this.#system(room, `🕵️ Espionaje en ${country}: ${what}. Nadie sabe quién ha sido`);
+      }
+      return;
     }
     if (event.type === 'eliminated') {
       this.#system(room, event.reason === 'capital'

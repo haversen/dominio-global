@@ -469,6 +469,13 @@ export function createGameServer({
       broadcastRoom(room);
     });
 
+    handle('game:spy', ({ mission, countryId }) => {
+      const { room, player } = current();
+      const result = rooms.spy(room, player, mission, countryId);
+      broadcastRoom(room);
+      return { success: result.success, caught: result.caught, text: result.text };
+    });
+
     handle('game:strike', ({ weapon, countryId }) => {
       const { room, player } = current();
       const strike = rooms.launchStrike(room, player, weapon, countryId);

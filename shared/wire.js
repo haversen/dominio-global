@@ -29,6 +29,7 @@ export function encodeCountries(countries, visible = null) {
     if (c.training.length) e.t = c.training.map((x) => [x.type, x.count, x.readyAt]);
     if (c.developing) e.d = [c.developing.toLevel, c.developing.readyAt];
     if (c.contaminatedUntil) e.x = c.contaminatedUntil;
+    if (c.owner && c.stability !== undefined) e.s = Math.round(c.stability);
     if (c.buildings && BUILDING_TYPES.some((t) => c.buildings[t])) e.b = BUILDING_TYPES.map((t) => c.buildings[t] ?? 0);
     if (c.constructing) e.c = [BUILDING_TYPES.indexOf(c.constructing.type), c.constructing.toLevel, c.constructing.readyAt];
     out[id] = e;
@@ -44,6 +45,7 @@ export function decodeCountries(compact) {
       level: e.l ?? 1,
       units: Object.fromEntries(UNIT_TYPES.map((t, i) => [t, e.u?.[i] ?? 0])),
       ...(e.h ? { hidden: true } : {}),
+      ...(e.s !== undefined ? { stability: e.s } : {}),
       training: (e.t ?? []).map(([type, count, readyAt]) => ({ type, count, readyAt })),
       developing: e.d ? { toLevel: e.d[0], readyAt: e.d[1] } : null,
       ...(e.x ? { contaminatedUntil: e.x } : {}),

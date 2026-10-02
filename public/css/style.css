@@ -1347,3 +1347,15 @@ button, a, .country { touch-action: manipulation; }
 .map.low-gfx .army-trail, .map.low-gfx .army-disc { filter: none; }
 .map.low-gfx .country { transition: none; }
 #btn-gfx.on { border-color: var(--accent); color: var(--accent); }
+
+/* Estabilidad, recursos estratégicos, espionaje y cansancio de guerra */
+.country.unstable { stroke: #ff9b3d !important; stroke-width: 2; stroke-dasharray: 3 3; animation: march 1.2s linear infinite; }
+.map-labels .label-res { stroke-width: 0; font-size: 0.95em; letter-spacing: 0.1em; }
+.strategic-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; font-size: 13px; }
+.stability { display: grid; gap: 4px; font-size: 13px; }
+.stability-bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.stability-bar i { display: block; height: 100%; background: var(--success); }
+.stability-warn .stability-bar i { background: var(--accent); }
+.stability-danger .stability-bar i { background: var(--danger); }
+.stability-danger small { color: var(--danger); }
+.weariness { margin: 0; font-size: 13px; color: #ffb36b; }
