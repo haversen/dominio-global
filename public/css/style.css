@@ -448,6 +448,8 @@ i.res-icon, .res i.res-icon, .prod i.res-icon, .market-good i.res-icon, .trade-r
 .map-area { position: relative; flex: 1; min-width: 0; overflow: hidden; background: #2c4a5e; }
 
 .map { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; }
+/* El mapa va en su propia capa: al arrastrar se desplaza la imagen ya dibujada (ver map.js #preview). */
+#map { transform-origin: 0 0; will-change: transform; }
 .map.dragging { cursor: grabbing; }
 .sphere { fill: url(#ocean-grad); stroke: #3c6680; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .sea-waves { fill: url(#waves); pointer-events: none; }

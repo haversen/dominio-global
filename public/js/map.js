@@ -173,6 +173,8 @@ export class WorldMap {
 
     this.fit = { x: 0, y: 0, w: world.width, h: world.height };
     this.view = { ...this.fit };
+    this.committed = { ...this.view }; // la vista que el SVG tiene dibujada (viewBox)
+    this.box = { left: 0, top: 0, width: 0, height: 0 }; // tamaño del mapa en pantalla (en caché)
     this.selected = null;
     this.pointers = new Map();
     this.drag = null;
@@ -572,9 +574,18 @@ export class WorldMap {
   }
 
   #markerScale() {
-    const rect = this.svgEl.getBoundingClientRect();
-    const unitsPerPx = rect.width ? this.view.w / rect.width : 1;
-    return `scale(${unitsPerPx.toFixed(3)})`;
+    return `scale(${this.#unitsPerPx().toFixed(3)})`;
+  }
+
+  // Unidades del mapa por píxel de pantalla en la vista dibujada.
+  #unitsPerPx() {
+    return this.box.width ? this.committed.w / this.box.width : 1;
+  }
+
+  // Mide el mapa en pantalla (una sola vez por gesto, no en cada movimiento).
+  #measure() {
+    const r = this.svgEl.parentElement.getBoundingClientRect();
+    this.box = { left: r.left, top: r.top, width: r.width, height: r.height };
   }
 
   select(id, { center = false } = {}) {
@@ -595,8 +606,9 @@ export class WorldMap {
   }
 
   zoomBy(factor) {
-    const rect = this.svgEl.getBoundingClientRect();
-    this.#zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, factor);
+    this.#measure();
+    this.#zoomAt(this.box.left + this.box.width / 2, this.box.top + this.box.height / 2, factor);
+    this.#commitSoon();
   }
 
   reset() {
@@ -634,7 +646,8 @@ export class WorldMap {
   // ---------- Vista ----------
 
   #resize() {
-    const rect = this.svgEl.getBoundingClientRect();
+    this.#measure();
+    const rect = this.box;
     if (!rect.width || !rect.height) return;
     const { width: W, height: H } = this.world;
     const aspect = rect.width / rect.height;
@@ -660,21 +673,84 @@ export class WorldMap {
     return { x: clampAxis(v.x, w, W), y: clampAxis(v.y, h, H), w, h };
   }
 
+  // Algo cambió en marcadores, insignias o etiquetas. En mitad de un gesto solo se recolocan
+  // (sin redibujar el mapa); si no, se redibuja todo.
   #scheduleApply() {
+    this.overlayDirty = true;
     if (this.frame) return;
     this.frame = requestAnimationFrame(() => {
       this.frame = null;
-      this.#apply();
+      if (this.pointers.size || this.animation || this.commitTimer) this.#syncOverlay();
+      else this.#apply();
     });
   }
 
+  // Durante un gesto (arrastrar, pellizcar, rueda, animación) no se vuelve a dibujar el mapa:
+  // se mueve con una transformación CSS la imagen ya dibujada, que la tarjeta gráfica desplaza
+  // sin coste. Al terminar el gesto (o si se aleja mucho de lo dibujado) se redibuja de verdad.
+  #preview() {
+    if (this.previewFrame) return;
+    this.previewFrame = requestAnimationFrame(() => {
+      this.previewFrame = null;
+      this.view = this.#clamp(this.view);
+      const c = this.committed;
+      const v = this.view;
+      const k = this.box.width / v.w; // píxeles por unidad en la vista nueva
+      const scale = c.w / v.w;
+      const tx = (c.x - v.x) * k;
+      const ty = (c.y - v.y) * k;
+      // Se redibuja si se ve demasiado borde vacío o la escala cambió mucho (se vería borroso).
+      const far = Math.abs(tx) > this.box.width * 0.3 || Math.abs(ty) > this.box.height * 0.3
+        || (scale - 1) * (scale - 1) > 0.2 * 0.2 * (scale < 1 ? 1 : 4);
+      if (far && performance.now() - (this.lastCommit ?? 0) > 120) {
+        this.#apply();
+        return;
+      }
+      this.svgEl.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${scale.toFixed(4)})`;
+      this.#updateMinimap();
+    });
+  }
+
+  // Redibuja poco después del último movimiento de la rueda o de un zoom con botones.
+  #commitSoon(delay = 160) {
+    clearTimeout(this.commitTimer);
+    this.commitTimer = setTimeout(() => {
+      this.commitTimer = null;
+      this.#apply();
+    }, delay);
+  }
+
+  #updateMinimap() {
+    const { x, y, w, h } = this.view;
+    this.viewportRect.setAttribute('x', x);
+    this.viewportRect.setAttribute('y', y);
+    this.viewportRect.setAttribute('width', w);
+    this.viewportRect.setAttribute('height', h);
+    this.minimapEl.classList.toggle('zoomed', this.zoom > 1.05);
+  }
+
   #apply() {
+    clearTimeout(this.commitTimer);
+    this.commitTimer = null;
+    if (this.previewFrame) cancelAnimationFrame(this.previewFrame);
+    this.previewFrame = null;
+    this.lastCommit = performance.now();
     this.view = this.#clamp(this.view);
     const { x, y, w, h } = this.view;
     this.svgEl.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+    this.svgEl.style.transform = '';
+    const zoomChanged = !this.committed || Math.abs(this.committed.w - w) > 1e-6 || this.overlayDirty !== false;
+    this.committed = { x, y, w, h };
+    // Al solo desplazar el mapa, etiquetas e insignias no cambian de tamaño: no hace falta tocarlas.
+    if (zoomChanged) this.#syncOverlay();
+    this.#updateDetail();
+    this.#updateMinimap();
+  }
 
-    const rect = this.svgEl.getBoundingClientRect();
-    const unitsPerPx = rect.width ? w / rect.width : 1;
+  // Tamaño en pantalla de etiquetas, marcadores, insignias y ejércitos según el zoom dibujado.
+  #syncOverlay() {
+    this.overlayDirty = false;
+    const unitsPerPx = this.#unitsPerPx();
     this.labelsGroup.setAttribute('font-size', (LABEL_PX * unitsPerPx).toFixed(2));
     // Marcadores, insignias y ejércitos mantienen el mismo tamaño en pantalla sea cual sea el zoom.
     const markerScale = `scale(${(unitsPerPx * 1.4).toFixed(3)})`;
@@ -693,17 +769,10 @@ export class WorldMap {
         badge.g.style.display = badge.always || label.widthUnits / unitsPerPx >= 34 ? '' : 'none';
       }
     }
-
-    this.#updateDetail();
-    this.viewportRect.setAttribute('x', x);
-    this.viewportRect.setAttribute('y', y);
-    this.viewportRect.setAttribute('width', w);
-    this.viewportRect.setAttribute('height', h);
-    this.minimapEl.classList.toggle('zoomed', zoom > 1.05);
   }
 
   #toMap(clientX, clientY) {
-    const rect = this.svgEl.getBoundingClientRect();
+    const rect = this.box;
     return {
       x: this.view.x + ((clientX - rect.left) / rect.width) * this.view.w,
       y: this.view.y + ((clientY - rect.top) / rect.height) * this.view.h,
@@ -721,7 +790,7 @@ export class WorldMap {
       w: target.w,
       h: target.h,
     };
-    this.#scheduleApply();
+    this.#preview();
   }
 
   #animateTo(target, duration = 400) {
@@ -740,8 +809,13 @@ export class WorldMap {
         w: from.w + (to.w - from.w) * e,
         h: from.h + (to.h - from.h) * e,
       };
-      this.#apply();
-      if (k < 1) requestAnimationFrame(step);
+      if (k < 1) {
+        this.#preview();
+        requestAnimationFrame(step);
+      } else {
+        this.animation = null;
+        this.#apply();
+      }
     };
     requestAnimationFrame(step);
   }
@@ -754,12 +828,15 @@ export class WorldMap {
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
       const speed = e.deltaMode === 1 ? 0.05 : 0.0015;
+      if (!this.commitTimer) this.#measure();
       this.#zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * speed));
+      this.#commitSoon();
     }, { passive: false });
 
     el.addEventListener('pointerdown', (e) => {
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       el.setPointerCapture(e.pointerId);
+      if (!this.pointers.size) this.#measure();
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.animation = null;
       this.#hideTooltip();
@@ -791,6 +868,7 @@ export class WorldMap {
         const [a, b] = [...this.pointers.values()];
         this.#zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, dist / this.pinch.dist);
         this.pinch.dist = dist;
+        this.pinched = true;
         return;
       }
       if (!this.drag) return;
@@ -802,7 +880,7 @@ export class WorldMap {
         const p = this.#toMap(e.clientX, e.clientY);
         this.view.x += this.drag.anchor.x - p.x;
         this.view.y += this.drag.anchor.y - p.y;
-        this.#apply();
+        this.#preview();
       }
     });
 
@@ -814,8 +892,11 @@ export class WorldMap {
       }
       if (this.pointers.size < 2) this.pinch = null;
       if (this.pointers.size === 0) {
+        const moved = this.drag?.moved || e.type === 'pointercancel' || this.pinched;
         this.drag = null;
+        this.pinched = false;
         el.classList.remove('dragging');
+        if (moved) this.#apply(); // el gesto ha terminado: ahora sí se redibuja
       }
     };
     el.addEventListener('pointerup', end);
@@ -860,7 +941,8 @@ export class WorldMap {
       const y = ((e.clientY - rect.top) / rect.height) * this.world.height;
       this.animation = null;
       this.view = { ...this.view, x: x - this.view.w / 2, y: y - this.view.h / 2 };
-      this.#apply();
+      this.#preview();
+      this.#commitSoon(120);
     };
     el.addEventListener('pointerdown', (e) => {
       el.setPointerCapture(e.pointerId);
