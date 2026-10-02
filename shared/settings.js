@@ -1,4 +1,5 @@
 import { SCENARIOS, SCENARIO_IDS, DEFAULT_SCENARIO, hasSpaceVictory } from './scenarios.js';
+import { TEAM_MODES, TEAM_MODE_IDS } from './teams.js';
 import { TROOP_PACES, DEFAULT_PACE } from './military.js';
 
 // Ajustes de partida compartidos por servidor y cliente.
@@ -10,6 +11,13 @@ export const SETTINGS_SCHEMA = {
     type: 'select',
     options: [2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16],
     default: 6,
+  },
+  teams: {
+    label: 'Equipos',
+    type: 'select',
+    options: TEAM_MODE_IDS,
+    labels: Object.fromEntries(TEAM_MODE_IDS.map((id) => [id, TEAM_MODES[id].label])),
+    default: 'none',
   },
   mapScenario: {
     label: 'Mapa',

@@ -21,6 +21,9 @@ export function setRelation(game, a, b, state, until = null) {
 export function declareWar(game, from, to, now = Date.now()) {
   if (game.phase !== 'active') return { error: 'La partida todavía no está en marcha' };
   if (from === to || !activePlayer(game, from) || !activePlayer(game, to)) return { error: 'Jugador no válido' };
+  if (game.teams && game.teams[from] && game.teams[from] === game.teams[to]) {
+    return { error: 'Sois del mismo equipo: no podéis atacaros' };
+  }
   const relation = relationOf(game.relations, from, to);
   const error = declareWarError(relation, now);
   if (error) return { error };

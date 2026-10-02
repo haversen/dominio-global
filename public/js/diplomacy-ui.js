@@ -15,6 +15,7 @@ import {
   WORLD_EVENTS, UN_RESOLUTIONS, MISSIONS, SPACE_STAGES, fill as fillText,
 } from '/shared/world.js';
 import { REGIONS, eraOf } from '/shared/scenarios.js';
+import { sameTeam, TEAM_ICONS } from '/shared/teams.js';
 import { weaponAllowed, spaceAllowed } from '/shared/eras.js';
 import {
   MARKET_GOODS, MARKET_FEE, MAX_TRADE, MAX_OFFER_AMOUNT, MAX_OFFERS_PER_PLAYER, BASE_PRICES, quote,
@@ -340,7 +341,9 @@ export class DiplomacyView {
                 class: `btn btn-xs ${this.unread[p.id] ? 'btn-primary' : ''}`,
                 onClick: () => { this.dmWith = p.id; this.unread[p.id] = 0; this.render(true); },
               }, `💬 Mensaje${this.unread[p.id] ? ` (${this.unread[p.id]})` : ''}`),
-              !out && !iAmOut && this.#relationActions(p, rel, now)),
+              !out && !iAmOut && (sameTeam(game.teams, me, p.id)
+                ? h('span', { class: 'chip' }, '🤝 Compañero de equipo')
+                : this.#relationActions(p, rel, now))),
             pending.length > 0 && h('div', { class: 'pending' }, pending.map((x) => h('span', { class: 'chip' },
               `${PROPOSALS[x.type].label} enviada · ${clock(x.expiresAt - now)}`,
               h('button', { class: 'btn btn-ghost btn-xs', onClick: () => this.#cancel(x) }, 'Cancelar')))));
@@ -937,7 +940,7 @@ function presidentTag(game, playerId) {
 // ---------- Clasificación ----------
 
 /** Objetivos de victoria y tabla de puntuaciones (también se usa en la pantalla final). */
-export function rankingTable(standings, players, me) {
+export function rankingTable(standings, players, me, teams = null) {
   return h('table', { class: 'ranking' },
     h('thead', {}, h('tr', {},
       h('th', {}, '#'), h('th', {}, 'Jugador'), h('th', {}, 'Países'), h('th', {}, '% mundo'),
@@ -946,7 +949,9 @@ export function rankingTable(standings, players, me) {
       const p = players.get(r.id);
       return h('tr', { class: `${r.id === me ? 'me' : ''}${r.eliminated ? ' out' : ''}` },
         h('td', {}, r.eliminated ? '☠' : String(i + 1)),
-        h('td', {}, h('span', { class: 'swatch', style: { background: p?.color } }), p && avatarEl(p), p?.name ?? 'Jugador retirado', r.id === me && h('em', {}, ' (tú)')),
+        h('td', {}, h('span', { class: 'swatch', style: { background: p?.color } }),
+          teams?.[r.id] && h('span', { class: 'chip-team' }, TEAM_ICONS[(teams[r.id] - 1) % TEAM_ICONS.length]),
+          p && avatarEl(p), p?.name ?? 'Jugador retirado', r.id === me && h('em', {}, ' (tú)')),
         h('td', {}, String(r.countries)),
         h('td', {}, `${fmt.format(r.areaPct)} %`),
         h('td', {}, String(r.units)),
@@ -989,7 +994,7 @@ function rankingView({ game, players, me, self }, now) {
       goals.length ? goals : h('p', { class: 'muted' }, 'Partida libre: no hay condiciones de victoria activas.')),
     h('section', { class: 'modal-section' },
       h('h4', { class: 'panel-sub' }, 'Clasificación'),
-      rankingTable(table, players, me),
+      rankingTable(table, players, me, game.teams),
       h('p', { class: 'muted small' }, 'La puntuación valora territorio, número de países, desarrollo, tecnología, tropas y recursos: se puede ganar por la vía militar o por la pacífica.')),
   ];
 }

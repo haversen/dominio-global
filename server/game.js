@@ -16,7 +16,8 @@ import {
 import {
   BUILDINGS, buildError, buildingCost, buildingMs, buildingIncome, trainFactor, bunkerFactor, damageBuildings,
 } from '../shared/buildings.js';
-import { relationOf, tickDiplomacy, forgetPlayer } from './diplomacy.js';
+import { relationOf, tickDiplomacy, forgetPlayer, setRelation } from './diplomacy.js';
+import { hasTeams, sideCountries } from '../shared/teams.js';
 import { createAIState, tickAI } from './ai.js';
 import { standings, checkVictory } from './victory.js';
 import { encodeCountries } from '../shared/wire.js';
@@ -137,6 +138,19 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
     if (wanted && COUNTRIES.has(wanted) && !isBlockedFor(game, id, wanted)) game.picks[id] = wanted;
   }
 
+  // Partida por equipos: los compañeros empiezan aliados (y no pueden romper la alianza).
+  game.teamMode = settings.teams ?? 'none';
+  game.teams = hasTeams(settings)
+    ? Object.fromEntries(playerIds.map((id) => [id, profiles[id]?.team ?? null]))
+    : null;
+  if (game.teams) {
+    for (const a of playerIds) {
+      for (const b of playerIds) {
+        if (a < b && game.teams[a] && game.teams[a] === game.teams[b]) setRelation(game, a, b, 'alliance');
+      }
+    }
+    game.startTeams = new Set(Object.values(game.teams).filter(Boolean)).size;
+  }
   if (settings.countryAssignment === 'choose' && !allPicked(game, playerIds)) {
     game.pickDeadline = now + PICK_DURATION_MS;
   } else {
@@ -761,6 +775,13 @@ export function checkEnd(game, now = Date.now()) {
     : missionWinner ? { winner: missionWinner[0], reason: 'mission' }
     : checkVictory(game, table, now);
   if (!outcome) return null;
+  // Por equipos gana todo el equipo del ganador.
+  if (game.teams && outcome.winner) {
+    outcome.team = outcome.team ?? game.teams[outcome.winner];
+    outcome.winners = Object.keys(game.teams).filter((id) => game.teams[id] === outcome.team);
+  } else {
+    outcome.winners = outcome.winner ? [outcome.winner] : [];
+  }
   game.phase = 'ended';
   game.armies = [];
   game.strikes = [];
@@ -1037,6 +1058,7 @@ export function publicGame(game, viewerId = null, now = Date.now()) {
     strikes: visible ? game.strikes.filter((x) => x.owner === viewerId || canSee(x.to)) : game.strikes,
     events: game.events,
     relations: game.relations,
+    teams: game.teams ?? null,
     market: publicMarket(game.market),
     presidents: Object.fromEntries(Object.entries(game.players).map(([id, p]) => [id, p.president])),
     victory: game.victory,
@@ -1103,6 +1125,9 @@ function autoPick(game, playerId, rng) {
   const distance = distancesFrom(taken);
 
   const free = WORLD.countries.filter((c) => !isBlockedFor(game, playerId, c.id));
+  // En «Dos bandos», primero los países históricos de su bando (el Eje recibe Alemania o Italia...).
+  const side = sideCountries(game.teamMode, game.scenario, game.teams?.[playerId]).filter((id) => free.some((c) => c.id === id));
+  if (side.length) return side[Math.floor(rng() * Math.min(side.length, 2))];
   // En los escenarios históricos se reparten primero los países protagonistas.
   const featured = (scenarioOf(game.scenario).featured ?? []).filter((id) => free.some((c) => c.id === id));
   if (featured.length) return featured[Math.floor(rng() * Math.min(featured.length, 2))];

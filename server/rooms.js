@@ -15,6 +15,7 @@ import { makeBot, runBots } from './bots.js';
 import { pairKey } from '../shared/diplomacy.js';
 import { VICTORY_REASONS } from '../shared/score.js';
 import { declareWar, propose, respond, cancelProposal } from './diplomacy.js';
+import { hasTeams, teamCount, teamCapacity, assignTeams, teamName } from '../shared/teams.js';
 
 export const PLAYER_COLORS = [
   '#e4572e', '#2e86de', '#f2c14e', '#17bebb',
@@ -100,6 +101,7 @@ export class RoomManager {
         avatar: p.avatar,
         president: p.president,
         country: p.country,
+        team: p.team ?? null,
         isHost: p.id === room.hostId,
       })),
     };
@@ -217,6 +219,13 @@ export class RoomManager {
     for (const p of room.players.values()) {
       if (p.country && !inScenario(settings.mapScenario, p.country)) p.country = null;
     }
+    // Equipos: si ya no existen o se han quedado pequeños, hay que volver a elegir.
+    const fill = {};
+    for (const p of room.players.values()) {
+      if (!p.team) continue;
+      fill[p.team] = (fill[p.team] ?? 0) + 1;
+      if (!hasTeams(settings) || p.team > teamCount(settings) || fill[p.team] > teamCapacity(settings)) p.team = null;
+    }
     // Si cambian las reglas, los demás tienen que volver a confirmar.
     for (const p of room.players.values()) if (p.id !== room.hostId) p.ready = false;
   }
@@ -231,6 +240,18 @@ export class RoomManager {
     if ('president' in patch) {
       if (!PRESIDENTS[patch.president]) throw new GameError('INVALID', 'Presidente no válido');
       player.president = patch.president;
+    }
+    if ('team' in patch) {
+      const team = patch.team;
+      if (team === null) {
+        player.team = null;
+      } else {
+        if (!hasTeams(room.settings)) throw new GameError('INVALID', 'Esta partida no es por equipos');
+        if (!Number.isInteger(team) || team < 1 || team > teamCount(room.settings)) throw new GameError('INVALID', 'Equipo no válido');
+        const members = [...room.players.values()].filter((p) => p.id !== player.id && p.team === team).length;
+        if (members >= teamCapacity(room.settings)) throw new GameError('TAKEN', 'Ese equipo ya está completo');
+        player.team = team;
+      }
     }
     if ('country' in patch) {
       const id = patch.country;
@@ -285,16 +306,27 @@ export class RoomManager {
     if (bots > 0 && room.players.size + bots > PLAYER_COLORS.length) {
       throw new GameError('INVALID_SETTINGS', `Con ${room.players.size} jugadores caben como mucho ${PLAYER_COLORS.length - room.players.size} bots`);
     }
+    const added = [];
     for (let i = 0; i < bots; i++) {
       const info = makeBot(i, Math.random);
       const bot = this.#addPlayer(room, randomId(16), info.name, info.avatar);
       Object.assign(bot, { bot: true, ready: true, president: info.president });
+      added.push(bot);
+    }
+    // Partida por equipos: quien no haya elegido (y los bots) va al equipo más vacío.
+    if (hasTeams(room.settings)) {
+      const teams = assignTeams(room.settings, [...room.players.values()]);
+      if (new Set(Object.values(teams)).size < 2) {
+        for (const bot of added) room.players.delete(bot.id);
+        throw new GameError('NOT_READY', 'Hace falta gente en al menos dos equipos (o añade bots)');
+      }
+      for (const p of room.players.values()) p.team = teams[p.id];
     }
 
     room.state = 'playing';
     room.startedAt = Date.now();
     const profiles = Object.fromEntries([...room.players.values()]
-      .map((p) => [p.id, { president: p.president, country: p.country }]));
+      .map((p) => [p.id, { president: p.president, country: p.country, team: p.team ?? null }]));
     room.game = createGame(room.settings, [...room.players.keys()], { profiles });
     this.#system(room, '¡La partida ha comenzado!');
     if (bots > 0) this.#system(room, `🤖 ${bots === 1 ? 'Un bot se une' : `${bots} bots se unen`} a la partida`);
@@ -631,7 +663,7 @@ export class RoomManager {
         avatar: player.avatar,
         country: country ?? null,
         eliminated: Boolean(game?.players[player.id]?.eliminated),
-        won: game?.result ? game.result.winner === player.id : null,
+        won: game?.result ? (game.result.winners ?? [game.result.winner]).includes(player.id) : null,
         countries: game ? Object.values(game.countries).filter((c) => c.owner === player.id).length : 0,
       },
     };
@@ -656,7 +688,7 @@ export class RoomManager {
         game: room.game,
         players: [...room.players.values()].map((p) => ({
           id: p.id, token: p.token, name: p.name, color: p.color, avatar: p.avatar,
-          president: p.president, country: p.country, persistent: p.persistent, account: p.account ?? null,
+          president: p.president, country: p.country, team: p.team ?? null, persistent: p.persistent, account: p.account ?? null,
         })),
       }));
   }
@@ -762,8 +794,9 @@ export class RoomManager {
 
   #finish(room) {
     room.state = 'finished';
-    const { winner, reason } = room.game.result;
-    const name = room.players.get(winner)?.name;
+    const { winner, reason, team } = room.game.result;
+    const winners = room.game.result.winners ?? (winner ? [winner] : []);
+    const name = team ? teamName(room.settings, team) : room.players.get(winner)?.name;
     this.#system(room, winner
       ? `🏆 ${name} gana la partida ${VICTORY_REASONS[reason]}`
       : `☠ ${VICTORY_REASONS.defeat}`);
@@ -781,7 +814,7 @@ export class RoomManager {
       results.push({
         player: p,
         result: {
-          won: winner === p.id,
+          won: winners.includes(p.id),
           place,
           players: table.length || room.players.size,
           eliminated: gp.eliminated,

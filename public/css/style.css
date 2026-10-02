@@ -565,6 +565,9 @@ i.res-icon, .res i.res-icon, .prod i.res-icon, .market-good i.res-icon, .trade-r
 .recruit-name small { color: var(--muted); font-size: 11px; }
 
 .steppers { display: grid; gap: 4px; margin-bottom: 8px; }
+.send-percent { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; }
+.send-percent input[type='range'] { flex: 1 1 90px; min-width: 90px; accent-color: var(--accent); }
+.send-percent-value { font-family: var(--font-mono); font-size: 13px; min-width: 42px; text-align: right; }
 .stepper { display: flex; align-items: center; gap: 6px; }
 .stepper b { font-family: var(--font-mono); min-width: 52px; text-align: center; font-size: 13px; }
 .stepper .btn-ghost { margin-left: auto; }
@@ -1454,3 +1457,14 @@ button, a, .country { touch-action: manipulation; }
   .game-topbar .btn-my-games { order: -1; border-color: var(--accent); color: var(--accent); font-weight: 700; }
   .game-topbar .btn-my-games .btn-label { display: inline; margin-left: 4px; }
 }
+
+/* Partidas por equipos */
+.team-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; }
+.team-option {
+  display: grid; gap: 2px; text-align: left; padding: 8px 10px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: rgba(255, 255, 255, 0.02); color: inherit; cursor: pointer;
+}
+.team-option.active { border-color: var(--accent); background: rgba(201, 162, 39, 0.1); }
+.team-option:disabled { opacity: 0.45; cursor: not-allowed; }
+.team-option small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-team { font-size: 11px; margin-right: 2px; }

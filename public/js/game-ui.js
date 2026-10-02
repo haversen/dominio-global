@@ -5,6 +5,7 @@ import { $, h, toast, guardTaps, durationText, avatarEl } from './dom.js';
 import { leaderBonus, discountCost } from '/shared/leaders.js';
 import { inScenario, scenarioOf, eraOf } from '/shared/scenarios.js';
 import { applyEra, weaponAllowed } from '/shared/eras.js';
+import { teamName, TEAM_ICONS } from '/shared/teams.js';
 import { STRATEGIC, strategicOf, needOf, hasAccess } from '/shared/strategic.js';
 import { SPY_MISSIONS, SPY_MISSION_IDS } from '/shared/espionage.js';
 import {
@@ -266,6 +267,7 @@ export class GameView {
       },
     },
     h('span', { class: 'swatch', style: { background: p.color } }),
+    game.teams?.[p.id] && h('span', { class: 'chip-team', title: teamName(this.getState().room.settings, game.teams[p.id], game.scenario) }, TEAM_ICONS[(game.teams[p.id] - 1) % TEAM_ICONS.length]),
     avatarEl(p),
     h('span', { class: 'chip-name' }, p.name),
     p.id !== me && game.phase === 'active' && (() => {
@@ -835,8 +837,32 @@ export class GameView {
           chosen[t] >= available[t] ? 'Nada' : 'Todo'));
     };
 
+    // Dividir el ejército por porcentaje: de cada tipo se manda ese % redondeado hacia abajo
+    // (con 15,6 tropas salen 15). Así siempre se queda algo de guarnición.
+    const byPercent = (pct) => {
+      this.sendPct = pct;
+      for (const t of UNIT_TYPES) chosen[t] = Math.floor((available[t] * pct) / 100);
+      this.#renderPanel();
+    };
+    const pctOf = UNIT_TYPES.every((t) => chosen[t] === Math.floor((available[t] * (this.sendPct ?? -1)) / 100)) ? this.sendPct : null;
+    const percentBar = h('div', { class: 'send-percent' },
+      h('span', { class: 'small muted' }, 'Dividir:'),
+      [10, 25, 50, 75, 100].map((pct) => h('button', {
+        class: `btn btn-xs ${pctOf === pct ? 'btn-primary' : ''}`,
+        title: `Enviar el ${pct} % de cada tipo de tropa (redondeando hacia abajo)`,
+        onClick: () => byPercent(pct),
+      }, `${pct} %`)),
+      h('input', {
+        type: 'range', min: 0, max: 100, step: 5, value: pctOf ?? Math.round((totalUnits(chosen) / totalUnits(available)) * 100),
+        'aria-label': 'Porcentaje de tropas a enviar',
+        onInput: (e) => { e.target.nextSibling.textContent = `${e.target.value} %`; },
+        onChange: (e) => byPercent(Number(e.target.value)),
+      }),
+      h('b', { class: 'send-percent-value' }, `${pctOf ?? Math.round((totalUnits(chosen) / totalUnits(available)) * 100)} %`));
+
     return h('div', {},
       h('h4', { class: 'panel-sub' }, `Enviar tropas · ${totalUnits(chosen)} seleccionadas`),
+      percentBar,
       h('div', { class: 'steppers' }, UNIT_TYPES.filter((t) => available[t] > 0).map(stepper)),
       h('div', { class: 'targets' }, playableNeighbors(game, c).map((id) => {
         const target = world.byId.get(id);
@@ -1082,17 +1108,18 @@ export class GameView {
     if (firstTime) {
       this.endShownFor = result.endedAt;
       $('#end-screen').classList.remove('hidden');
-      play(result.winner === me ? 'victory' : 'defeat');
+      play((result.winners ?? [result.winner]).includes(me) ? 'victory' : 'defeat');
     }
     if (!firstTime && this.renderedEndFor === `${result.endedAt}:${room.hostId}`) return;
     this.renderedEndFor = `${result.endedAt}:${room.hostId}`;
 
     const winner = players.get(result.winner);
-    const won = result.winner === me;
+    const won = (result.winners ?? [result.winner]).includes(me);
     const title = result.reason === 'defeat' ? 'DERROTA' : won ? 'VICTORIA' : 'FIN DE LA PARTIDA';
+    const winnerName = result.team ? teamName(room.settings, result.team, game.scenario) : winner?.name ?? 'Un jugador';
     const subtitle = result.reason === 'defeat'
       ? VICTORY_REASONS.defeat
-      : `${won ? 'Has ganado' : `${winner?.name ?? 'Un jugador'} gana`} ${VICTORY_REASONS[result.reason]}`;
+      : `${won ? (result.team ? `¡Tu equipo gana! ${winnerName}` : 'Has ganado') : `${winnerName} gana`} ${VICTORY_REASONS[result.reason]}`;
     const minutes = Math.round(result.duration / 60_000);
     const isHost = room.hostId === me;
 
@@ -1101,7 +1128,7 @@ export class GameView {
         h('span', { class: 'eyebrow' }, `Partida terminada · ${minutes} min`),
         h('h2', {}, title),
         h('p', {}, subtitle)),
-      rankingTable(result.standings, players, me),
+      rankingTable(result.standings, players, me, game.teams),
       h('div', { class: 'end-actions' },
         h('button', { class: 'btn btn-ghost', onClick: () => this.showResults(false) }, 'Ver el mapa'),
         h('button', { class: 'btn btn-ghost', onClick: () => $('#btn-leave-game').click() }, 'Salir'),

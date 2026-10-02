@@ -4,6 +4,7 @@ import { $, h, toast, copyText, avatarEl } from './dom.js';
 import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, PRESIDENT_IDS } from '/shared/leaders.js';
 import { ACHIEVEMENTS, ACHIEVEMENT_IDS } from '/shared/achievements.js';
 import { scenarioOf, inScenario } from '/shared/scenarios.js';
+import { hasTeams, teamCount, teamCapacity, teamName, TEAM_ICONS } from '/shared/teams.js';
 import { GameView, loadWorld } from './game-ui.js';
 import { play, isMuted, setMuted } from './sound.js';
 import { decodeCountries } from '/shared/wire.js';
@@ -45,17 +46,26 @@ function render() {
     renderMenu();
     return showScreen('menu');
   }
-  // El chat es el mismo panel en el lobby y en la partida: se mueve de sitio.
-  const chatPanel = $('#chat-panel');
   if (room.state === 'lobby') {
-    $('#lobby-chat-slot').append(chatPanel);
+    placeChat('#lobby-chat-slot');
     renderLobby();
     showScreen('lobby');
   } else {
-    $('#game-chat-slot').append(chatPanel);
+    placeChat('#game-chat-slot');
     showScreen('game');
     gameView.show();
   }
+}
+
+// El chat es el mismo panel en el lobby y en la partida: se mueve de sitio solo cuando cambia de
+// pantalla (moverlo en cada actualización hacía que su lista volviera arriba del todo).
+function placeChat(slotSelector) {
+  const chatPanel = $('#chat-panel');
+  const slot = $(slotSelector);
+  if (chatPanel.parentElement === slot) return;
+  slot.append(chatPanel);
+  const log = $('#chat-log');
+  log.scrollTop = log.scrollHeight;
 }
 
 // Último estado recibido en formato compacto (sobre él se aplican los parches).
@@ -502,6 +512,35 @@ function renderProfile(me) {
   }));
 
   renderCountryPick(me);
+  renderTeamPick(me);
+}
+
+// Partidas por equipos: cada uno elige el suyo (o deja que se le asigne al empezar).
+function renderTeamPick(me) {
+  const settings = state.room?.settings;
+  const on = hasTeams(settings);
+  $('#team-block').classList.toggle('hidden', !on);
+  if (!on) return;
+  const players = state.room.players;
+  const capacity = teamCapacity(settings);
+  const teams = Array.from({ length: teamCount(settings) }, (_, i) => i + 1);
+  $('#team-pick').replaceChildren(
+    ...teams.map((t) => {
+      const members = players.filter((p) => p.team === t);
+      const full = members.length >= capacity && me.team !== t;
+      return h('button', {
+        class: `team-option${me.team === t ? ' active' : ''}`,
+        disabled: full,
+        onClick: () => setProfile({ team: t }),
+      },
+      h('strong', {}, teamName(settings, t)),
+      h('small', { class: 'muted' }, `${members.length}/${capacity}${members.length ? ` · ${members.map((p) => p.name).join(', ')}` : ''}`));
+    }),
+    h('button', {
+      class: `team-option${me.team ? '' : ' active'}`,
+      onClick: () => setProfile({ team: null }),
+    }, h('strong', {}, '🎲 Me da igual'), h('small', { class: 'muted' }, 'Al empezar vas al equipo con menos gente')),
+  );
 }
 
 const countrySelect = $('#country-select');
@@ -604,7 +643,7 @@ function playerItem(p, viewerIsHost) {
     h('span', { class: 'swatch', style: { background: p.color } }),
     h('span', { class: 'player-avatar' }, p.avatar ?? DEFAULT_AVATAR),
     h('span', { class: 'player-name' }, p.name, isMe ? h('em', {}, ' (tú)') : null,
-      h('small', { class: 'player-sub' }, `${pres ? `${pres.portrait} ${pres.title}` : ''} · ${country ?? '🎲 país al azar'}`)),
+      h('small', { class: 'player-sub' }, `${hasTeams(state.room?.settings) ? `${p.team ? teamName(state.room.settings, p.team) : '🎲 sin equipo'} · ` : ''}${pres ? `${pres.portrait} ${pres.title}` : ''} · ${country ?? '🎲 país al azar'}`)),
     h('span', { class: 'badges' }, badges),
     kick,
   );

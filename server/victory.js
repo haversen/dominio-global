@@ -61,6 +61,7 @@ export function standings(game, areaOf, totalArea) {
 export function checkVictory(game, table, now) {
   const alive = table.filter((r) => !r.eliminated);
   if (alive.length === 0) return { winner: null, reason: 'defeat' };
+  if (game.teams) return teamVictory(game, table, alive, now);
 
   const { domination, lastStanding, timeLimitMs } = game.victory;
   if (domination) {
@@ -73,6 +74,28 @@ export function checkVictory(game, table, now) {
   }
   if (timeLimitMs && now - game.startedAt >= timeLimitMs) {
     return { winner: alive[0].id, reason: 'time' };
+  }
+  return null;
+}
+
+// Por equipos se suman los países y la puntuación de los compañeros.
+// Devuelve el mejor jugador vivo del equipo ganador como `winner` (y `team`).
+function teamVictory(game, table, alive, now) {
+  const teamOf = (r) => game.teams[r.id];
+  const best = (team) => alive.find((r) => teamOf(r) === team);
+  const sum = (team, key, rows = table) => rows.filter((r) => teamOf(r) === team).reduce((s, r) => s + r[key], 0);
+  const teamsAlive = [...new Set(alive.map(teamOf))];
+  const { domination, lastStanding, timeLimitMs } = game.victory;
+  if (domination) {
+    const dominant = teamsAlive.find((t) => sum(t, 'areaPct', alive) >= domination);
+    if (dominant) return { winner: best(dominant).id, team: dominant, reason: 'domination' };
+  }
+  if (lastStanding && (game.startTeams ?? 2) >= 2 && teamsAlive.length === 1) {
+    return { winner: best(teamsAlive[0]).id, team: teamsAlive[0], reason: 'lastStanding' };
+  }
+  if (timeLimitMs && now - game.startedAt >= timeLimitMs) {
+    const top = teamsAlive.reduce((a, b) => (sum(b, 'score') > sum(a, 'score') ? b : a));
+    return { winner: best(top).id, team: top, reason: 'time' };
   }
   return null;
 }

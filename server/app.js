@@ -402,12 +402,13 @@ export function createGameServer({
       broadcastRoom(room);
     });
 
-    handle('room:profile', ({ avatar, president, country }) => {
+    handle('room:profile', ({ avatar, president, country, team }) => {
       const { room, player } = current();
       const patch = {};
       if (avatar !== undefined) patch.avatar = avatar;
       if (president !== undefined) patch.president = president;
       if (country !== undefined) patch.country = country;
+      if (team !== undefined) patch.team = team;
       rooms.setProfile(room, player, patch);
       broadcastRoom(room);
     });
