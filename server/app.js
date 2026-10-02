@@ -7,6 +7,7 @@ import { RoomManager, GameError } from './rooms.js';
 import { AccountStore, AccountError } from './accounts.js';
 import { isValidToken, normalizeCode, randomId } from './utils.js';
 import { makeDelta } from '../shared/delta.js';
+import { validSubscription, addSubscription } from './push.js';
 
 // El servidor avanza las partidas 4 veces por segundo; los recursos privados se envían cada segundo.
 const TICK_INTERVAL_MS = 250;
@@ -23,7 +24,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
  * y reciben instantáneas del estado.
  */
 export function createGameServer({
-  tickIntervalMs = TICK_INTERVAL_MS, accounts = new AccountStore(), storageInfo = () => null,
+  tickIntervalMs = TICK_INTERVAL_MS, accounts = new AccountStore(), storageInfo = () => null, push = null,
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -69,8 +70,30 @@ export function createGameServer({
     pingTimeout: 20_000,
   });
 
+  // Suscripciones a avisos de los invitados (las de las cuentas se guardan en la cuenta).
+  const guestSubs = new Map(); // token del navegador -> [suscripciones]
+  const subsOf = (player) => (player.account ? accounts.users.get(player.account)?.push : guestSubs.get(player.token));
+  const notify = (room, playerId, payload) => {
+    const player = room.players.get(playerId);
+    if (!push || !player || player.connected || player.bot) return; // solo a quien no está mirando
+    const subs = subsOf(player);
+    if (!subs?.length) return;
+    push.send(subs, payload, `${playerId}|${payload.tag}`).then((gone) => {
+      if (!gone.length) return;
+      const keep = (list) => list.filter((x) => !gone.includes(x.endpoint));
+      if (player.account) {
+        const account = accounts.users.get(player.account);
+        if (account) {
+          account.push = keep(account.push ?? []);
+          accounts.onChange();
+        }
+      } else guestSubs.set(player.token, keep(guestSubs.get(player.token) ?? []));
+    }).catch((err) => console.error('[avisos]', err.message));
+  };
+
   const rooms = new RoomManager({
     onChat: (room, msg) => io.to(room.code).emit('chat:message', msg),
+    onNotify: notify,
   });
 
   // Estado privado (recursos) para cada jugador de la sala.
@@ -229,6 +252,22 @@ export function createGameServer({
       return account.games.map((g) => rooms.summaryFor(g.seat)).filter(Boolean);
     };
 
+    // ---------- Avisos al móvil ----------
+
+    handle('push:key', () => ({ publicKey: push?.publicKey ?? null }));
+
+    handle('push:subscribe', ({ subscription }) => {
+      if (!push) throw new GameError('UNAVAILABLE', 'Los avisos no están disponibles en este servidor');
+      if (!validSubscription(subscription)) throw new GameError('INVALID', 'Suscripción no válida');
+      const account = socket.data.account;
+      if (account) {
+        account.push = addSubscription(account.push, subscription);
+        accounts.onChange();
+      } else {
+        guestSubs.set(device, addSubscription(guestSubs.get(device), subscription));
+      }
+    });
+
     // ---------- Cuentas ----------
 
     handle('auth:register', async ({ username, password }) => {
@@ -301,7 +340,7 @@ export function createGameServer({
       exitCurrent();
       if (account) {
         const seat = randomId(16);
-        const { room } = rooms.createRoom(seat, account.username, avatar, { persistent: true });
+        const { room } = rooms.createRoom(seat, account.username, avatar, { persistent: true, account: account.username.toLowerCase() });
         accounts.addGame(account, room.code, seat);
         socket.data.token = seat;
       } else {
@@ -327,7 +366,7 @@ export function createGameServer({
         return enterRoom();
       }
       const seat = randomId(16);
-      rooms.joinRoom(seat, account.username, clean, avatar, { persistent: true });
+      rooms.joinRoom(seat, account.username, clean, avatar, { persistent: true, account: account.username.toLowerCase() });
       exitCurrent();
       accounts.addGame(account, clean, seat);
       socket.data.token = seat;

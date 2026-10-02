@@ -7,6 +7,7 @@ import { GameView, loadWorld } from './game-ui.js';
 import { play, isMuted, setMuted } from './sound.js';
 import { decodeCountries } from '/shared/wire.js';
 import { applyDelta } from '/shared/delta.js';
+import { registerServiceWorker, enableNotifications, syncNotifications, notificationsOn } from './notify.js';
 
 const NAME_KEY = 'dg.name';
 const AVATAR_KEY = 'dg.avatar';
@@ -201,6 +202,7 @@ $('#auth-form').addEventListener('submit', (e) => {
     $('#auth-pass').value = '';
     setSession(res.session);
     setAccount(res.account, res.games);
+    syncNotifications(); // los avisos de este dispositivo pasan a la cuenta
     toast(authMode === 'login' ? `¡Hola de nuevo, ${res.account.username}!` : `Cuenta creada. ¡Bienvenido, ${res.account.username}!`, 'success');
   });
 });
@@ -631,6 +633,7 @@ function setConn(kind, label) {
 
 socket.on('connect', async () => {
   setConn('online', 'Conectado');
+  syncNotifications();
   const hadRoom = Boolean(state.room);
   const currentCode = state.room?.code ?? new URLSearchParams(location.search).get('code');
 
@@ -711,6 +714,25 @@ for (const btn of document.querySelectorAll('.btn-mute')) {
   });
 }
 renderMute();
+
+// ================= Avisos al móvil =================
+
+function renderNotify() {
+  const on = notificationsOn();
+  for (const btn of document.querySelectorAll('.btn-notify')) {
+    btn.textContent = btn.classList.contains('notify-menu') ? (on ? '🔔 Avisos al móvil activados' : '🔕 Activar avisos al móvil') : (on ? '🔔' : '🔕');
+    btn.title = on ? 'Avisos activados: te avisamos si te atacan aunque tengas el juego cerrado' : 'Activar avisos al móvil';
+    btn.classList.toggle('on', on);
+  }
+}
+for (const btn of document.querySelectorAll('.btn-notify')) {
+  btn.addEventListener('click', async () => {
+    await enableNotifications();
+    renderNotify();
+  });
+}
+registerServiceWorker();
+renderNotify();
 
 // ================= Inicio =================
 

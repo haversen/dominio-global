@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test test/rooms.test.js test/game.test.js test/socket.test.js test/market.test.js test/maps.test.js test/buildings.test.js test/accounts.test.js",
+    "test": "node --test test/rooms.test.js test/game.test.js test/socket.test.js test/market.test.js test/maps.test.js test/buildings.test.js test/accounts.test.js test/push.test.js",
     "build:map": "node scripts/build-world.js",
     "load-test": "node scripts/load-test.js"
   },
@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "express": "^4.21.2",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "d3-geo": "^3.1.1",

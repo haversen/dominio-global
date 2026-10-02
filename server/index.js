@@ -2,6 +2,7 @@ import os from 'node:os';
 import { createGameServer } from './app.js';
 import { createStorage } from './storage.js';
 import { AccountStore } from './accounts.js';
+import { createPush, generateKeys } from './push.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -30,7 +31,24 @@ const track = (promise) => promise
   .then(() => { saveStatus.lastSaveAt = new Date().toISOString(); saveStatus.lastError = null; })
   .catch((err) => { saveStatus.lastError = err.message; throw err; });
 
+// Claves de los avisos al móvil: de las variables de entorno o generadas una vez y guardadas
+// (si cambiaran, las suscripciones de los jugadores dejarían de funcionar).
+let push = null;
+try {
+  let keys = process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY
+    ? { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY }
+    : await storage.loadValue('vapid');
+  if (!keys) {
+    keys = generateKeys();
+    await storage.saveValue('vapid', keys);
+  }
+  push = createPush(keys);
+} catch (err) {
+  console.error('[avisos] No disponibles:', err.message);
+}
+
 const { server, rooms, close } = createGameServer({
+  push,
   accounts,
   storageInfo: () => ({ kind: storage.kind.startsWith('archivo') ? 'archivo local' : storage.kind, ok: !saveStatus.lastError, ...saveStatus }),
 });

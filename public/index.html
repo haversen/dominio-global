@@ -9,6 +9,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%230a0d0b' stroke='%236b8f3a' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='14' fill='none' stroke='%23c9a227' stroke-width='4'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/css/style.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0a0d0b">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dominio">
 </head>
 <body>
   <div class="bg-grid" aria-hidden="true"></div>
@@ -99,6 +105,8 @@
         <div id="games-list" class="games-list"></div>
       </section>
 
+      <button type="button" class="btn btn-ghost btn-notify notify-menu">🔕 Activar avisos al móvil</button>
+
       <footer class="menu-footer">v1.7 · Dominio Global</footer>
     </div>
   </main>
@@ -117,6 +125,7 @@
         <button id="btn-copy-link" class="btn btn-sm">Copiar invitación</button>
       </div>
       <button class="btn btn-ghost btn-sm btn-mute" title="Silenciar o activar el sonido">🔊</button>
+      <button class="btn btn-ghost btn-sm btn-notify" title="Avisos al móvil">🔕</button>
       <button class="btn btn-ghost btn-sm btn-my-games" title="Salir al menú sin abandonar la sala">🏠 Menú</button>
       <button id="btn-leave" class="btn btn-ghost btn-sm" title="Salir de la sala definitivamente">Abandonar</button>
     </header>
@@ -196,6 +205,7 @@
       <button id="btn-tech" class="btn btn-sm topbar-btn" title="Tecnología"><span class="btn-icon">🔬</span><span class="btn-label">Tecnología</span> <span id="tech-progress" class="count hidden"></span></button>
       <button id="btn-ranking" class="btn btn-sm topbar-btn" title="Clasificación y objetivos">🏆</button>
       <button class="btn btn-sm topbar-btn btn-mute" title="Silenciar o activar el sonido">🔊</button>
+      <button class="btn btn-sm topbar-btn btn-notify" title="Avisos al móvil">🔕</button>
       <span class="game-clock" title="Tiempo de partida"><span id="game-clock">00:00</span></span>
       <span class="room-tag">Sala <strong id="game-code"></strong></span>
       <button class="btn btn-sm topbar-btn btn-my-games" title="Salir al menú sin abandonar la partida"><span class="btn-icon">🏠</span><span class="btn-label">Menú</span></button>

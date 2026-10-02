@@ -48,10 +48,16 @@ export class GameError extends Error {
  * y tiene además un id público que es el que ven los demás.
  */
 export class RoomManager {
-  constructor({ onChat = () => {} } = {}) {
+  constructor({ onChat = () => {}, onNotify = () => {} } = {}) {
     this.rooms = new Map();   // code -> room
     this.tokens = new Map();  // token -> { code, playerId }
     this.onChat = onChat;     // (room, message) => void, para difundir mensajes de sistema
+    this.onNotify = onNotify; // (room, playerId, { title, body, tag }) => void, avisos al móvil
+  }
+
+  #notify(room, playerId, title, body, tag) {
+    if (!playerId) return;
+    this.onNotify(room, playerId, { title, body, tag: `${room.code}-${tag}`, url: `/?code=${room.code}` });
   }
 
   // ---------- Consulta ----------
@@ -273,6 +279,7 @@ export class RoomManager {
       .map((p) => [p.id, { president: p.president, country: p.country }]));
     room.game = createGame(room.settings, [...room.players.keys()], { profiles });
     this.#system(room, '¡La partida ha comenzado!');
+    for (const p of room.players.values()) this.#notify(room, p.id, '🎮 ¡La partida ha comenzado!', `Sala ${room.code}: entra a elegir tu estrategia.`, 'start');
     if (room.game.phase === 'picking') {
       this.#system(room, 'Elegid vuestro país en el mapa antes de que acabe el tiempo');
     } else {
@@ -316,6 +323,12 @@ export class RoomManager {
     this.#requirePlaying(room);
     const { error, army } = moveArmy(room.game, player.id, from, to, units);
     if (error) throw new GameError('INVALID_ACTION', error);
+    const target = room.game.countries[to].owner;
+    if (target && target !== player.id) {
+      const mins = Math.max(1, Math.round((army.arriveAt - Date.now()) / 60_000));
+      this.#notify(room, target, `⚔ ¡Te atacan en ${COUNTRIES.get(to).name}!`,
+        `${player.name} envía tropas desde ${COUNTRIES.get(from).name}. Llegan en unos ${mins} min.`, `attack-${to}`);
+    }
     return army;
   }
 
@@ -387,6 +400,7 @@ export class RoomManager {
     const key = pairKey(player.id, target.id);
     const thread = room.dms.get(key) ?? [];
     const msg = { id: randomId(), from: player.id, to: target.id, text, ts: now };
+    this.#notify(room, target.id, `💬 ${player.name}`, text, `dm-${player.id}`);
     thread.push(msg);
     if (thread.length > DM_HISTORY_SIZE) thread.shift();
     room.dms.set(key, thread);
@@ -416,6 +430,7 @@ export class RoomManager {
     this.#requirePlaying(room);
     const { error, proposal } = propose(room.game, player.id, targetId, type, payload);
     if (error) throw new GameError('INVALID_ACTION', error);
+    this.#notify(room, targetId, '🤝 Propuesta diplomática', `${player.name} te ha enviado una propuesta. Caduca en 1 minuto.`, 'proposal');
     return proposal;
   }
 
@@ -580,7 +595,7 @@ export class RoomManager {
         game: room.game,
         players: [...room.players.values()].map((p) => ({
           id: p.id, token: p.token, name: p.name, color: p.color, avatar: p.avatar,
-          president: p.president, country: p.country, persistent: p.persistent,
+          president: p.president, country: p.country, persistent: p.persistent, account: p.account ?? null,
         })),
       }));
   }
@@ -629,7 +644,7 @@ export class RoomManager {
 
   // ---------- Internos ----------
 
-  #addPlayer(room, token, name, avatar, { persistent = false } = {}) {
+  #addPlayer(room, token, name, avatar, { persistent = false, account = null } = {}) {
     const usedColors = new Set([...room.players.values()].map((p) => p.color));
     const player = {
       id: randomId(),
@@ -641,6 +656,7 @@ export class RoomManager {
       president: DEFAULT_PRESIDENT,
       country: null,    // país elegido en la sala (null = el que toque)
       persistent,       // jugador con cuenta: conserva su plaza aunque salga al menú
+      account,          // nombre de la cuenta (en minúsculas) para enviarle avisos
       connected: false, // pasa a true cuando se asocia el socket
       socketId: null,
       disconnectedAt: null,
@@ -699,6 +715,14 @@ export class RoomManager {
 
   #announceEvent(room, event) {
     const name = (pid) => (pid ? room.players.get(pid)?.name ?? 'Un jugador' : 'las fuerzas neutrales');
+    // Avisos al móvil para quien no está mirando.
+    if (event.type === 'eliminated') this.#notify(room, event.player, '☠ Has sido eliminado', event.reason === 'capital' ? `${name(event.by)} ha tomado tu capital.` : 'Has perdido todos tus países.', 'eliminated');
+    if (event.type === 'battle' && event.defender && event.attackerWins && !event.capitalTaken) {
+      this.#notify(room, event.defender, `🏴 Has perdido ${COUNTRIES.get(event.country).name}`, `${name(event.attacker)} lo ha conquistado.`, `lost-${event.country}`);
+    }
+    if (event.type === 'strike' && event.defender && !event.intercepted) {
+      this.#notify(room, event.defender, `💣 Bombardeo en ${COUNTRIES.get(event.country).name}`, `${name(event.attacker)} ha alcanzado tu país.`, `strike-${event.country}`);
+    }
     if (event.type === 'eliminated') {
       this.#system(room, event.reason === 'capital'
         ? `☠ ${name(event.by)} ha tomado la capital de ${name(event.player)}: ${name(event.player)} queda eliminado y sus países pasan a ser neutrales`

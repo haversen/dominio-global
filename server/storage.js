@@ -51,6 +51,15 @@ function fileStorage(file) {
       }
     },
     saveAccounts: (accounts) => writeAtomic(accountsFile, accounts),
+    // Valores sueltos (p. ej. las claves de los avisos).
+    async loadValue(name) {
+      try {
+        return JSON.parse(await readFile(path.join(path.dirname(file), `${name}.json`), 'utf8'));
+      } catch {
+        return null;
+      }
+    },
+    saveValue: (name, value) => writeAtomic(path.join(path.dirname(file), `${name}.json`), value),
     async load() {
       try {
         return JSON.parse(await readFile(file, 'utf8'));
@@ -85,6 +94,13 @@ function redisStorage(url, token) {
     },
     async saveAccounts(accounts) {
       await call([['SET', ACCOUNTS_KEY, JSON.stringify(accounts)]]);
+    },
+    async loadValue(name) {
+      const [res] = await call([['GET', `dominio:${name}`]]);
+      return res?.result ? JSON.parse(res.result) : null;
+    },
+    async saveValue(name, value) {
+      await call([['SET', `dominio:${name}`, JSON.stringify(value)]]);
     },
     async load() {
       const [index] = await call([['GET', INDEX_KEY]]);

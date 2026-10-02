@@ -1337,3 +1337,7 @@ button, a, .country { touch-action: manipulation; }
   .offer-sides .offer-arrow { display: none; }
   .avatar-option, .president-card, .market-good { min-height: 44px; }
 }
+
+/* Avisos al móvil */
+.btn-notify.on { border-color: var(--success); }
+.notify-menu { justify-self: center; }
