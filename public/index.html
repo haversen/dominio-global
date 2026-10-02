@@ -105,9 +105,25 @@
         <div id="games-list" class="games-list"></div>
       </section>
 
+      <section id="profile-panel" class="panel profile-box hidden">
+        <div class="panel-head">
+          <h3>🏅 Tu perfil</h3>
+          <span id="profile-rank" class="muted"></span>
+        </div>
+        <div id="profile-body" class="profile-body"></div>
+      </section>
+
+      <section id="global-ranking" class="panel ranking-box">
+        <div class="panel-head">
+          <h3>🌍 Clasificación global</h3>
+          <button id="btn-refresh-ranking" type="button" class="btn btn-ghost btn-xs" title="Actualizar">↻</button>
+        </div>
+        <ol id="ranking-list" class="global-ranking"></ol>
+      </section>
+
       <button type="button" class="btn btn-ghost btn-notify notify-menu">🔕 Activar avisos al móvil</button>
 
-      <footer class="menu-footer">v1.7 · Dominio Global</footer>
+      <footer class="menu-footer">v2.0 · Dominio Global</footer>
     </div>
   </main>
 
@@ -239,9 +255,11 @@
           <button id="btn-zoom-reset" class="btn btn-sm" title="Ver el mundo entero">⤢</button>
           <button id="btn-zoom-home" class="btn btn-sm" title="Ir a mi país">★</button>
           <button id="btn-gfx" class="btn btn-sm" title="Gráficos ligeros (para móviles lentos)">⚡</button>
+          <button id="btn-tutorial" class="btn btn-sm" title="Ver el tutorial">❓</button>
         </div>
 
         <div id="proposals" class="proposals"></div>
+        <div id="tutorial" class="tutorial hidden" role="dialog" aria-label="Tutorial"></div>
         <div id="map-tooltip" class="map-tooltip hidden"></div>
         <svg id="minimap" class="minimap" aria-label="Minimapa"></svg>
       </div>

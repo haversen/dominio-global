@@ -23,6 +23,7 @@ import { techBonus, isUnlocked, treeBonus } from '/shared/tech.js';
 import { DiplomacyView, rankingTable, setWorldNames } from './diplomacy-ui.js';
 import { VICTORY_REASONS } from '/shared/score.js';
 import { play } from './sound.js';
+import { startTutorial, maybeStartTutorial, refreshTutorialHighlight } from './tutorial.js';
 
 const NEUTRAL_COLOR = '#56614f';
 const NEUTRAL_BADGE = '#3a4437';
@@ -92,6 +93,7 @@ export class GameView {
     $('#btn-zoom-in').addEventListener('click', () => this.map?.zoomBy(1.6));
     $('#btn-zoom-out').addEventListener('click', () => this.map?.zoomBy(1 / 1.6));
     $('#btn-zoom-reset').addEventListener('click', () => this.map?.reset());
+    $('#btn-tutorial').addEventListener('click', () => startTutorial());
     $('#btn-gfx').addEventListener('click', () => {
       if (!this.map) return;
       this.map.setLowGraphics(!this.map.lowGfx);
@@ -198,11 +200,13 @@ export class GameView {
       this.centeredHome = true;
       this.#focus(home, 3);
       toast(`Tu país: ${world.byId.get(home).name}`, 'success');
+      maybeStartTutorial(); // la primera vez que se juega
     }
 
     this.#renderPanel();
     this.diplo.render();
     this.#tickClock();
+    refreshTutorialHighlight();
   }
 
   // ---------- Datos derivados ----------

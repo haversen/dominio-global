@@ -335,7 +335,7 @@ export class DiplomacyView {
               `${RELATIONS[rel.state].icon} ${RELATIONS[rel.state].label}`,
               rel.state === 'nap' && h('small', {}, ` · ${clock(rel.until - now)}`)),
             h('div', { class: 'relation-actions' },
-              h('button', {
+              !p.bot && h('button', {
                 class: `btn btn-xs ${this.unread[p.id] ? 'btn-primary' : ''}`,
                 onClick: () => { this.dmWith = p.id; this.unread[p.id] = 0; this.render(true); },
               }, `💬 Mensaje${this.unread[p.id] ? ` (${this.unread[p.id]})` : ''}`),

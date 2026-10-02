@@ -97,6 +97,13 @@ export function createGameServer({
   const rooms = new RoomManager({
     onChat: (room, msg) => io.to(room.code).emit('chat:message', msg),
     onNotify: notify,
+    // Al acabar una partida: estadísticas, puntuación y logros de cada cuenta.
+    onGameEnd: (room, results) => {
+      for (const { player, result } of results) {
+        const earned = accounts.recordGame(player.account, result);
+        if (earned.length && player.socketId) io.to(player.socketId).emit('account:achievements', earned);
+      }
+    },
   });
 
   // Estado privado (recursos) para cada jugador de la sala.
@@ -301,6 +308,11 @@ export function createGameServer({
     });
 
     handle('account:games', () => ({ games: myGames(requireAccount()) }));
+
+    handle('account:profile', () => ({ profile: accounts.profile(requireAccount()) }));
+
+    // Clasificación global (la pueden ver también los invitados).
+    handle('ranking:global', () => ({ ranking: accounts.ranking(20) }));
 
     // Entra en una de tus partidas (sin salir de las demás).
     handle('room:enter', ({ code }) => {

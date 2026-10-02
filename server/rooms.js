@@ -10,6 +10,7 @@ import { trade, postOffer, acceptOffer, cancelOffer } from './market.js';
 import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, DEFAULT_PRESIDENT } from '../shared/leaders.js';
 import { inScenario, scenarioOf, REGIONS } from '../shared/scenarios.js';
 import { UN_RESOLUTIONS, MISSIONS, SPACE_STAGES, fill } from '../shared/world.js';
+import { makeBot, runBots } from './bots.js';
 import { WEAPONS } from '../shared/military.js';
 import { pairKey } from '../shared/diplomacy.js';
 import { VICTORY_REASONS } from '../shared/score.js';
@@ -50,7 +51,8 @@ export class GameError extends Error {
  * y tiene además un id público que es el que ven los demás.
  */
 export class RoomManager {
-  constructor({ onChat = () => {}, onNotify = () => {} } = {}) {
+  constructor({ onChat = () => {}, onNotify = () => {}, onGameEnd = () => {} } = {}) {
+    this.onGameEnd = onGameEnd; // (room, [{ player, result }]) => void, para los perfiles de las cuentas
     this.rooms = new Map();   // code -> room
     this.tokens = new Map();  // token -> { code, playerId }
     this.onChat = onChat;     // (room, message) => void, para difundir mensajes de sistema
@@ -92,6 +94,7 @@ export class RoomManager {
         color: p.color,
         ready: p.ready,
         connected: p.connected,
+        bot: Boolean(p.bot),
         avatar: p.avatar,
         president: p.president,
         country: p.country,
@@ -275,12 +278,24 @@ export class RoomManager {
       throw new GameError('NOT_READY', 'Todos los jugadores deben estar listos');
     }
 
+    // Bots opcionales que rellenan plazas (como mucho 8 jugadores en total, uno por color).
+    const bots = room.settings.bots ?? 0;
+    if (bots > 0 && room.players.size + bots > PLAYER_COLORS.length) {
+      throw new GameError('INVALID_SETTINGS', `Con ${room.players.size} jugadores caben como mucho ${PLAYER_COLORS.length - room.players.size} bots`);
+    }
+    for (let i = 0; i < bots; i++) {
+      const info = makeBot(i, Math.random);
+      const bot = this.#addPlayer(room, randomId(16), info.name, info.avatar);
+      Object.assign(bot, { bot: true, ready: true, president: info.president });
+    }
+
     room.state = 'playing';
     room.startedAt = Date.now();
     const profiles = Object.fromEntries([...room.players.values()]
       .map((p) => [p.id, { president: p.president, country: p.country }]));
     room.game = createGame(room.settings, [...room.players.keys()], { profiles });
     this.#system(room, '¡La partida ha comenzado!');
+    if (bots > 0) this.#system(room, `🤖 ${bots === 1 ? 'Un bot se une' : `${bots} bots se unen`} a la partida`);
     for (const p of room.players.values()) this.#notify(room, p.id, '🎮 ¡La partida ha comenzado!', `Sala ${room.code}: entra a elegir tu estrategia.`, 'start');
     if (room.game.phase === 'picking') {
       this.#system(room, 'Elegid vuestro país en el mapa antes de que acabe el tiempo');
@@ -506,6 +521,7 @@ export class RoomManager {
       // (así se puede jugar a lo largo de varios días, entrando y saliendo).
       if (room.state !== 'playing' || !room.game) continue;
       const result = tickGame(room.game, [...room.players.keys()], now);
+      runBots(this, room, now);
       if (result.picked) this.#announceHomes(room);
       for (const event of result.events) this.#announceEvent(room, event);
       if (result.ended) this.#finish(room);
@@ -521,6 +537,13 @@ export class RoomManager {
     room.state = 'lobby';
     room.game = null;
     room.startedAt = null;
+    // Los bots se van con la partida; en la revancha se vuelven a crear.
+    for (const p of [...room.players.values()]) {
+      if (p.bot) {
+        room.players.delete(p.id);
+        this.tokens.delete(p.token);
+      }
+    }
     for (const p of room.players.values()) p.ready = false;
     this.#system(room, `${player.name} ha vuelto al lobby. ¡Preparad la revancha!`);
   }
@@ -709,7 +732,8 @@ export class RoomManager {
     this.tokens.delete(player.token);
     if (room.game) releasePlayer(room.game, player.id);
 
-    if (room.players.size === 0) {
+    // Una sala en la que solo quedan bots se cierra.
+    if (![...room.players.values()].some((p) => !p.bot)) {
       this.#deleteRoom(room);
       return true;
     }
@@ -727,7 +751,7 @@ export class RoomManager {
   }
 
   #migrateHost(room) {
-    const players = [...room.players.values()];
+    const players = [...room.players.values()].filter((p) => !p.bot);
     const next = players.find((p) => p.connected) ?? players[0];
     room.hostId = next.id;
     next.ready = false;
@@ -741,6 +765,35 @@ export class RoomManager {
     this.#system(room, winner
       ? `🏆 ${name} gana la partida ${VICTORY_REASONS[reason]}`
       : `☠ ${VICTORY_REASONS.defeat}`);
+
+    // Resultado de cada jugador para su perfil (solo cuentan los que tienen cuenta).
+    const game = room.game;
+    const table = game.result.standings ?? [];
+    const results = [];
+    for (const p of room.players.values()) {
+      const gp = game.players[p.id];
+      if (!p.account || !gp) continue;
+      const place = Math.max(1, table.findIndex((r) => r.id === p.id) + 1);
+      const buildings = Object.values(game.countries).filter((c) => c.owner === p.id)
+        .reduce((n, c) => n + Object.values(c.buildings ?? {}).reduce((a, b) => a + b, 0), 0);
+      results.push({
+        player: p,
+        result: {
+          won: winner === p.id,
+          place,
+          players: table.length || room.players.size,
+          eliminated: gp.eliminated,
+          conquests: gp.stats?.conquests ?? 0,
+          nukes: gp.stats?.nukes ?? 0,
+          spies: gp.stats?.spySuccess ?? 0,
+          moon: (gp.space?.stage ?? 0) >= 3,
+          mission: Boolean(gp.mission?.done),
+          pacifist: !(gp.stats?.playerConquests > 0),
+          buildings,
+        },
+      });
+    }
+    if (results.length) this.onGameEnd(room, results);
   }
 
   #requirePlaying(room) {

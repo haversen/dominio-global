@@ -7,6 +7,7 @@
 
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
+import { START_RATING, ratingChange } from '../shared/achievements.js';
 
 const scrypt = promisify(crypto.scrypt);
 const KEY_LENGTH = 32;
@@ -113,6 +114,69 @@ export class AccountStore {
     const before = account.games.length;
     account.games = account.games.filter((g) => isAlive(g.code, g.seat));
     if (account.games.length !== before) this.onChange();
+  }
+
+  // ---------- Perfil, logros y clasificación global ----------
+
+  /**
+   * Apunta el resultado de una partida en la cuenta. Devuelve los logros nuevos.
+   * r: { won, place, players, eliminated, conquests, nukes, spies, moon, mission, pacifist, buildings }
+   */
+  recordGame(username, r) {
+    const account = this.users.get(String(username).toLowerCase());
+    if (!account) return [];
+    const st = (account.stats ??= { games: 0, wins: 0, conquests: 0, nukes: 0, spies: 0, best: 0 });
+    st.games += 1;
+    if (r.won) st.wins += 1;
+    st.conquests += r.conquests ?? 0;
+    st.nukes += r.nukes ?? 0;
+    st.spies += r.spies ?? 0;
+    account.rating = (account.rating ?? START_RATING) + ratingChange(r);
+    st.best = Math.max(st.best, account.rating);
+
+    const have = new Set(account.achievements ?? []);
+    const earn = [];
+    const give = (id, cond) => { if (cond && !have.has(id)) { have.add(id); earn.push(id); } };
+    give('recruit', true);
+    give('veteran', st.games >= 10);
+    give('firstWin', r.won);
+    give('champion', st.wins >= 5);
+    give('conqueror', (r.conquests ?? 0) >= 15);
+    give('survivor', !r.eliminated && r.players >= 3);
+    give('nuke', (r.nukes ?? 0) > 0);
+    give('spy', (r.spies ?? 0) >= 5);
+    give('astronaut', r.moon);
+    give('mission', r.mission);
+    give('pacifist', r.won && r.pacifist);
+    give('builder', (r.buildings ?? 0) >= 15);
+    account.achievements = [...have];
+    this.onChange();
+    return earn;
+  }
+
+  profile(account) {
+    const ranked = this.ranking(Infinity);
+    const position = ranked.findIndex((x) => x.username === account.username);
+    return {
+      username: account.username,
+      createdAt: account.createdAt,
+      rating: account.rating ?? START_RATING,
+      position: position >= 0 ? position + 1 : null,
+      stats: account.stats ?? { games: 0, wins: 0, conquests: 0, nukes: 0, spies: 0, best: START_RATING },
+      achievements: account.achievements ?? [],
+    };
+  }
+
+  /** Clasificación global: cuentas que han terminado al menos una partida, por puntuación. */
+  ranking(limit = 20) {
+    return [...this.users.values()]
+      .filter((a) => a.stats?.games > 0)
+      .sort((a, b) => (b.rating ?? START_RATING) - (a.rating ?? START_RATING))
+      .slice(0, limit)
+      .map((a) => ({
+        username: a.username, rating: a.rating ?? START_RATING, games: a.stats.games, wins: a.stats.wins,
+        medals: (a.achievements ?? []).length,
+      }));
   }
 
   // ---------- Guardado ----------

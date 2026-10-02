@@ -490,6 +490,7 @@ export function launchStrike(game, playerId, weapon, targetId, now = Date.now())
   };
   game.strikes.push(strike);
   if (weapon === 'nuke' && game.world) game.world.offender = playerId; // la ONU votará sanciones
+  if (weapon === 'nuke') player.stats.nukes = (player.stats.nukes ?? 0) + 1;
   return { strike };
 }
 
@@ -837,6 +838,7 @@ function arrive(game, army, now, rng) {
     attackerStats[result.attackerWins ? 'battlesWon' : 'battlesLost']++;
     attackerStats.unitsLost += totalUnits(event.attackerLosses);
     if (result.attackerWins) attackerStats.conquests++;
+    if (result.attackerWins && defender) attackerStats.playerConquests = (attackerStats.playerConquests ?? 0) + 1;
   }
   if (defenderStats) {
     defenderStats[result.attackerWins ? 'battlesLost' : 'battlesWon']++;

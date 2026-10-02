@@ -117,6 +117,59 @@ En la sala se elige el ritmo:
 - Escenarios inspirados en guerras: **Gran Guerra (1914-1918)**, **Segunda Guerra Mundial**, **Guerra del Pacífico** y **Guerra Fría**. Tienen países protagonistas (⭐) que se reparten primero, y en los tres primeros se puede empezar al lado de otro jugador.
 - Los países de fuera del mapa se ven apagados y no se pueden pisar ni bombardear. El % de dominación se mide sobre el mapa elegido (de Rusia, en Europa, solo cuenta su parte europea).
 
+### Niebla de guerra y espionaje
+
+Con la **niebla de guerra** (activada por defecto) cada jugador solo ve las tropas de sus países, de sus vecinos, de sus aliados y de los destinos de sus ejércitos; del resto solo sabe quién es el dueño. El servidor envía a cada jugador su propia vista, así que no se puede hacer trampa mirando los datos.
+
+**Espionaje** (`shared/espionage.js`): desde el panel de un país ajeno se envían espías:
+
+| Misión | Efecto | Éxito |
+|--------|--------|------:|
+| 🔭 Reconocimiento | Revela sus tropas 3 minutos | 90 % |
+| 💥 Sabotaje | Detiene sus obras y daña un edificio (o parte de la guarnición) | 55 % |
+| 📄 Robar tecnología | Copia una investigación del dueño | 35 % |
+| ✊ Fomentar revuelta | Baja 40 puntos su estabilidad | 45 % |
+
+Si una misión falla, el espía puede ser capturado y se anuncia quién lo envió.
+
+### Estabilidad, rebeliones y cansancio de guerra
+
+- Cada país conquistado tiene **estabilidad** (0-100 %): empieza en 40 % (si era neutral) o 25 % (si era de otro jugador) y sube con el tiempo, más rápido con al menos 5 tropas dentro; sin tropas se desmorona. Un país inestable produce menos (50 % con estabilidad 0) y, por debajo del 25 %, puede **sublevarse** y volver a ser neutral. La capital nunca se subleva.
+- **Cansancio de guerra**: cada unidad perdida baja los ingresos (hasta un 40 %) y se recupera poco a poco.
+
+### Recursos estratégicos
+
+☢️ **Uranio**, 💎 **tierras raras** y 🌳 **caucho** solo existen en algunos países (como en la vida real) y aparecen en el mapa bajo su nombre. Hacen falta para las armas y tropas avanzadas: caucho para la infantería mecanizada, los tanques pesados y los bombarderos; tierras raras para los carros modernos, los reactores y los misiles; uranio para la bomba nuclear. Basta con controlar un país que los tenga o ser aliado de quien lo controla.
+
+### El mundo: eventos, ONU, misiones y carrera espacial (pestaña 🌐 Mundo)
+
+- **Eventos mundiales** cada pocos minutos, con su titular en **El Diario Global**: crisis del petróleo, cosecha histórica, boom económico, pandemia, huracanes, terremotos, golpes de estado, avances científicos y fiebres del oro.
+- **Naciones Unidas**: cada pocos minutos se vota una resolución (sanciones contra quien usó una bomba nuclear o contra el imperio más grande, alto el fuego entre dos jugadores en guerra, ayuda humanitaria al más débil o prohibición de las nucleares). Cada voto pesa tantos países como controla quien vota.
+- **Misiones secretas**: cada jugador recibe un objetivo oculto (controlar media región, construir, desarrollar, eliminar a un rival, dominar el mar, espiar, acumular dinero o reunir los tres recursos estratégicos). Cumplirlo da 250 puntos o, si se activa en la sala, la victoria.
+- **Carrera espacial** (en Tecnología): 🛰️ satélite espía (te quita la niebla de guerra), 🏗️ estación espacial (investigación un 20 % más rápida) y 🌕 llegada a la Luna (**victoria científica**).
+
+### Bots (opcionales)
+
+En la sala se pueden añadir de 0 a 5 **bots** (por defecto ninguno) que juegan con las mismas reglas: gestionan su economía, investigan, construyen, protegen su capital, atacan, declaran la guerra a vecinos más débiles, responden a la diplomacia y votan en la ONU. Su carácter depende de la dificultad elegida para la IA.
+
+### Perfil, logros y clasificación global
+
+Los jugadores con cuenta acumulan estadísticas y una **puntuación** que sube al ganar y baja al perder, y consiguen **12 medallas** (Primera victoria, Conquistador, Destructor de mundos, Agente secreto, Pequeño paso, Pacifista...). En el menú se ven el perfil y la **clasificación global**.
+
+### Tutorial
+
+La primera partida muestra una guía de 7 pasos que señala cada parte de la pantalla. Se puede repetir con el botón ❓ junto al mapa.
+
+### App instalable y avisos al móvil
+
+El juego se puede **instalar** en la pantalla de inicio del móvil u ordenador (manifest + service worker) y envía **avisos** (Web Push, botón 🔔) cuando no lo estás mirando: te atacan, pierdes un país, te bombardean, te eliminan, te proponen algo, te escriben, hay votación en la ONU o empieza la partida. En iPhone hay que añadirlo antes a la pantalla de inicio. Las claves de los avisos se generan solas y se guardan (o se pueden poner en `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`).
+
+### Rendimiento
+
+- **Envío por diferencias** (`shared/delta.js`): tras el primer estado, cada jugador solo recibe lo que ha cambiado.
+- **Compresión** gzip de los archivos (el mapa pasa de 250 KB a 80 KB) y de los mensajes grandes.
+- **Contornos simplificados** del mapa para el zoom alejado y botón ⚡ de **gráficos ligeros** (activo por defecto en dispositivos con poca memoria).
+
 ### Expediciones navales
 
 Con al menos un barco en la expedición se puede zarpar desde un país con costa hacia **cualquier país con costa del mapa**, no solo a los vecinos (por ejemplo, de Estados Unidos a Australia), llevando también tropas de tierra y aviones a bordo. Viajan a la velocidad del barco más lento, las rutas por mar cuentan un 40 % más de distancia y el desembarco es un ataque anfibio (salvo con la modificación *Desembarco anfibio*). En el panel de un país propio con costa aparece **Expedición naval** con la lista de destinos; en un país ajeno, **Atacar por mar desde** muestra tus puertos con barcos. En el mapa, las flotas que cruzan medio mundo dan la vuelta por el borde (por el Pacífico).
@@ -287,6 +340,16 @@ Todas las acciones del cliente usan *acknowledgements*: el servidor responde `{ 
 | `account:games`    | —                      | Lista de «Mis partidas»              |
 | `room:enter`       | `{ code }`             | Entra en una de tus partidas         |
 | `room:detach`      | —                      | Vuelve al menú sin abandonar la partida |
+| `room:resync`      | —                      | Pide de nuevo el estado completo     |
+| `session:peek`     | —                      | Invitado: ¿tiene una partida a la que volver? |
+| `account:profile`  | —                      | Perfil, logros y puesto              |
+| `ranking:global`   | —                      | Clasificación global                 |
+| `push:key`         | —                      | Clave pública de los avisos          |
+| `push:subscribe`   | `{ subscription }`     | Activa los avisos en este dispositivo |
+| `game:build`       | `{ countryId, type }`  | Construye un edificio                |
+| `game:spy`         | `{ mission, countryId }` | Misión de espionaje                |
+| `game:space`       | —                      | Siguiente etapa de la carrera espacial |
+| `un:vote`          | `{ vote }`             | Vota en la ONU (`yes` / `no`)        |
 | `room:create`      | `{ name, avatar? }`    | Crea sala y te hace anfitrión        |
 | `room:join`        | `{ name, code, avatar? }` | Entra en una sala por código      |
 | `room:profile`     | `{ avatar?, president?, country? }` | Tu avatar, presidente y país en la sala |
@@ -316,7 +379,9 @@ Todas las acciones del cliente usan *acknowledgements*: el servidor responde `{ 
 
 | Servidor → cliente | Descripción                                        |
 |--------------------|----------------------------------------------------|
-| `room:state`       | Instantánea pública de la sala                     |
+| `room:state`       | Estado completo de la sala (con la niebla de guerra de cada jugador) |
+| `room:delta`       | Solo lo que ha cambiado desde el último envío       |
+| `account:achievements` | Logros conseguidos al acabar una partida        |
 | `game:self`        | Datos privados: recursos, tecnología y propuestas (cada segundo) |
 | `diplo:answered`   | Respuesta del otro jugador a tu propuesta          |
 | `market:filled`    | Alguien ha aceptado tu oferta                      |

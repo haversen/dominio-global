@@ -2,6 +2,7 @@ import { SETTINGS_SCHEMA, optionLabel } from '/shared/settings.js';
 import { socket, request, getSession, setSession } from './net.js';
 import { $, h, toast, copyText, avatarEl } from './dom.js';
 import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, PRESIDENT_IDS } from '/shared/leaders.js';
+import { ACHIEVEMENTS, ACHIEVEMENT_IDS } from '/shared/achievements.js';
 import { scenarioOf, inScenario } from '/shared/scenarios.js';
 import { GameView, loadWorld } from './game-ui.js';
 import { play, isMuted, setMuted } from './sound.js';
@@ -104,8 +105,11 @@ function exitToMenu(message, kind = 'info') {
   history.replaceState(null, '', location.pathname);
   render();
   if (message) toast(message, kind);
-  if (state.account) refreshGames();
-  else refreshGuestGame();
+  if (state.account) {
+    refreshGames();
+    refreshProfile();
+  } else refreshGuestGame();
+  refreshRanking();
 }
 
 // ================= Menú principal =================
@@ -202,6 +206,7 @@ $('#auth-form').addEventListener('submit', (e) => {
     $('#auth-pass').value = '';
     setSession(res.session);
     setAccount(res.account, res.games);
+    refreshProfile();
     syncNotifications(); // los avisos de este dispositivo pasan a la cuenta
     toast(authMode === 'login' ? `¡Hola de nuevo, ${res.account.username}!` : `Cuenta creada. ¡Bienvenido, ${res.account.username}!`, 'success');
   });
@@ -243,9 +248,76 @@ async function refreshGuestGame() {
   if (!state.room) renderMenu();
 }
 
+// ---------- Perfil y clasificación global ----------
+
+let accountProfile = null;
+let ranking = [];
+
+async function refreshProfile() {
+  if (!state.account) {
+    accountProfile = null;
+    return;
+  }
+  const res = await request('account:profile');
+  if (res.ok) accountProfile = res.profile;
+  if (!state.room) renderAccountProfile();
+}
+
+async function refreshRanking() {
+  const res = await request('ranking:global');
+  if (res.ok) ranking = res.ranking;
+  if (!state.room) renderRanking();
+}
+$('#btn-refresh-ranking').addEventListener('click', refreshRanking);
+
+function renderAccountProfile() {
+  $('#profile-panel').classList.toggle('hidden', !state.account || !accountProfile);
+  if (!accountProfile) return;
+  const st = accountProfile.stats;
+  $('#profile-rank').textContent = accountProfile.position ? `Puesto ${accountProfile.position} del mundo` : 'Sin clasificar todavía';
+  const have = new Set(accountProfile.achievements);
+  $('#profile-body').replaceChildren(
+    h('div', { class: 'profile-stats' },
+      h('div', {}, h('b', {}, String(accountProfile.rating)), h('small', {}, 'Puntuación')),
+      h('div', {}, h('b', {}, String(st.games)), h('small', {}, 'Partidas')),
+      h('div', {}, h('b', {}, String(st.wins)), h('small', {}, 'Victorias')),
+      h('div', {}, h('b', {}, String(st.conquests)), h('small', {}, 'Conquistas'))),
+    h('div', { class: 'medals' }, ACHIEVEMENT_IDS.map((id) => {
+      const a = ACHIEVEMENTS[id];
+      return h('span', { class: `medal${have.has(id) ? ' won' : ''}`, title: `${a.label}: ${a.desc}${have.has(id) ? ' ✓' : ''}` },
+        h('i', {}, a.icon), h('small', {}, a.label));
+    })),
+    h('p', { class: 'muted small' }, `Medallas: ${have.size} de ${ACHIEVEMENT_IDS.length}. Pasa el dedo o el ratón por encima para ver cómo conseguirlas.`));
+}
+
+function renderRanking() {
+  const list = $('#ranking-list');
+  if (!ranking.length) {
+    list.replaceChildren(h('li', { class: 'muted small' }, 'Todavía nadie ha terminado una partida con cuenta. ¡Sé el primero!'));
+    return;
+  }
+  list.replaceChildren(...ranking.map((r, i) => h('li', { class: r.username === state.account?.username ? 'me' : '' },
+    h('span', { class: 'rank-pos' }, i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`),
+    h('strong', {}, r.username),
+    h('small', { class: 'muted' }, `${r.wins} victorias · ${r.games} partidas · 🏅 ${r.medals}`),
+    h('b', { class: 'rank-rating' }, String(r.rating)))));
+}
+
+// Logros conseguidos al acabar una partida.
+socket.on('account:achievements', (ids) => {
+  for (const id of ids) {
+    const a = ACHIEVEMENTS[id];
+    if (a) toast(`🏅 ¡Logro desbloqueado! ${a.icon} ${a.label}: ${a.desc}`, 'success', 7000);
+  }
+  play('victory');
+  refreshProfile();
+});
+
 const STATE_LABEL = { lobby: '🕓 En la sala', playing: '⚔ En juego', finished: '🏁 Terminada' };
 
 function renderMenu() {
+  renderAccountProfile();
+  renderRanking();
   const logged = Boolean(state.account);
   $('#account-out').classList.toggle('hidden', logged);
   $('#account-in').classList.toggle('hidden', !logged);
@@ -639,9 +711,11 @@ socket.on('connect', async () => {
 
   // ¿Hay sesión de cuenta? Entonces se vuelve a la partida en la que estábamos (si es nuestra) o al menú.
   const me = await request('account:me');
+  refreshRanking();
   if (me.ok && me.account) {
     state.account = me.account;
     state.games = me.games;
+    refreshProfile();
     const mine = me.games.find((g) => g.code === currentCode);
     if (mine) {
       const res = await request('room:enter', { code: mine.code });

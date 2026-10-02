@@ -152,3 +152,21 @@ test('🏠 Menú: un invitado vuelve al menú sin abandonar y puede regresar a s
   assert.equal(back.restored, true);
   assert.equal(back.you, created.you, 'sigue siendo el mismo jugador');
 });
+
+test('perfil: estadísticas, logros, puntuación y clasificación global', async () => {
+  const store = new AccountStore();
+  await store.register('Ganadora', 'clave123');
+  await store.register('Perdedor', 'clave123');
+  const earned = store.recordGame('ganadora', { won: true, place: 1, players: 3, eliminated: false, conquests: 16, nukes: 1, spies: 0, moon: false, mission: true, pacifist: false, buildings: 3 });
+  assert.deepEqual(earned.sort(), ['conqueror', 'firstWin', 'mission', 'nuke', 'recruit', 'survivor'].sort());
+  assert.deepEqual(store.recordGame('ganadora', { won: false, place: 2, players: 3 }), [], 'los logros no se repiten');
+  store.recordGame('perdedor', { won: false, place: 3, players: 3, eliminated: true });
+
+  const ranking = store.ranking();
+  assert.deepEqual(ranking.map((r) => r.username), ['Ganadora', 'Perdedor']);
+  assert.ok(ranking[0].rating > 1000 && ranking[1].rating < 1000);
+  const profile = store.profile(store.users.get('ganadora'));
+  assert.equal(profile.position, 1);
+  assert.equal(profile.stats.games, 2);
+  assert.equal(profile.stats.wins, 1);
+});
