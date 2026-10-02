@@ -14,10 +14,13 @@ const INDEX_KEY = 'dominio:rooms';
 const TTL_SECONDS = 8 * 24 * 60 * 60; // una partida abandonada desaparece a los 8 días
 const BATCH = 8;
 
+// Al copiar los valores es fácil arrastrar comillas o espacios: se quitan.
+const clean = (value) => String(value ?? '').trim().replace(/^["']+|["']+$/g, '').trim();
+
 export function createStorage(env = process.env) {
-  if (env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN) {
-    return redisStorage(env.UPSTASH_REDIS_REST_URL.replace(/\/$/, ''), env.UPSTASH_REDIS_REST_TOKEN);
-  }
+  const url = clean(env.UPSTASH_REDIS_REST_URL);
+  const token = clean(env.UPSTASH_REDIS_REST_TOKEN);
+  if (url && token) return redisStorage(url.replace(/\/$/, ''), token);
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   return fileStorage(path.resolve(env.DATA_DIR || path.join(root, 'data'), 'rooms.json'));
 }
