@@ -25,7 +25,17 @@ function getToken() {
   return token;
 }
 
-export const socket = io({ auth: { token: getToken() } });
+// Sesión de la cuenta (si se ha iniciado sesión). Se envía al conectar y al reconectar.
+const SESSION_KEY = 'dg.session';
+export const getSession = () => store.getItem(SESSION_KEY);
+
+export const socket = io({ auth: { token: getToken(), session: getSession() ?? undefined } });
+
+export function setSession(key) {
+  if (key) store.setItem(SESSION_KEY, key);
+  else store.removeItem(SESSION_KEY);
+  socket.auth.session = key ?? undefined;
+}
 
 /** Envía una acción y espera la respuesta del servidor: { ok, error?, ... }. */
 export function request(event, payload = {}, timeoutMs = 6000) {

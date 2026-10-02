@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { Server } from 'socket.io';
 import { RoomManager, GameError } from './rooms.js';
-import { isValidToken } from './utils.js';
+import { AccountStore, AccountError } from './accounts.js';
+import { isValidToken, normalizeCode, randomId } from './utils.js';
 
 // El servidor avanza las partidas 4 veces por segundo; los recursos privados se envían cada segundo.
 const TICK_INTERVAL_MS = 250;
@@ -20,7 +21,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
  * El servidor es la única autoridad: los clientes solo envían acciones
  * y reciben instantáneas del estado.
  */
-export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
+export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS, accounts = new AccountStore() } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use((_req, res, next) => {
@@ -90,16 +91,22 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
     return sent;
   };
 
-  // El cliente se identifica con un token secreto guardado en su pestaña.
+  // El cliente se identifica con un token secreto guardado en su navegador (invitado)
+  // y, si ha iniciado sesión, con su clave de sesión (cuenta).
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!isValidToken(token)) return next(new Error('INVALID_TOKEN'));
     socket.data.token = token;
+    socket.data.device = token;
+    socket.data.account = accounts.bySession(socket.handshake.auth?.session);
     next();
   });
 
   io.on('connection', (socket) => {
-    const token = socket.data.token;
+    // Token con el que este socket está sentado en su sala actual: el del navegador (invitado)
+    // o la plaza de la cuenta en esa partida.
+    const tok = () => socket.data.token;
+    const device = socket.data.device;
     const bucket = { tokens: RATE_BURST, last: Date.now() };
     const allow = () => {
       const now = Date.now();
@@ -118,29 +125,31 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
           reply({ ok: false, code: 'RATE_LIMIT', error: 'Demasiadas acciones seguidas; espera un momento' });
           return;
         }
-        try {
-          const data = payload && typeof payload === 'object' ? payload : {};
-          reply({ ok: true, ...(fn(data) ?? {}) });
-        } catch (err) {
-          if (err instanceof GameError) {
-            reply({ ok: false, code: err.code, error: err.message });
-          } else {
-            console.error(`[${event}]`, err);
-            reply({ ok: false, code: 'INTERNAL', error: 'Error interno del servidor' });
-          }
-        }
+        const data = payload && typeof payload === 'object' ? payload : {};
+        // Los manejadores pueden ser síncronos o asíncronos (inicio de sesión).
+        Promise.resolve()
+          .then(() => fn(data))
+          .then((res) => reply({ ok: true, ...(res ?? {}) }))
+          .catch((err) => {
+            if (err instanceof GameError || err instanceof AccountError) {
+              reply({ ok: false, code: err.code, error: err.message });
+            } else {
+              console.error(`[${event}]`, err);
+              reply({ ok: false, code: 'INTERNAL', error: 'Error interno del servidor' });
+            }
+          });
       });
     };
 
     const current = () => {
-      const ref = rooms.getByToken(token);
+      const ref = rooms.getByToken(tok());
       if (!ref) throw new GameError('NO_ROOM', 'No estás en ninguna partida');
       return ref;
     };
 
     // Mete este socket en la sala de Socket.IO y devuelve lo que el cliente necesita.
     const enterRoom = () => {
-      const { room, player, previousSocketId } = rooms.attachSocket(token, socket.id);
+      const { room, player, previousSocketId } = rooms.attachSocket(tok(), socket.id);
 
       // Si la misma sesión estaba abierta en otra pestaña, gana la más reciente.
       if (previousSocketId && previousSocketId !== socket.id) {
@@ -163,34 +172,138 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
       };
     };
 
-    const leaveCurrent = () => {
-      const left = rooms.leave(token);
+    const leaveSocketRoom = () => {
       if (socket.data.code) socket.leave(socket.data.code);
       socket.data.code = null;
+    };
+    const leaveCurrent = () => {
+      const left = rooms.leave(tok());
+      leaveSocketRoom();
       if (left && !left.deleted) broadcastRoom(left.room);
     };
+    // Sale de la sala actual en esta conexión. Con cuenta solo se desconecta (la plaza se conserva);
+    // como invitado se abandona, igual que antes.
+    const exitCurrent = () => {
+      if (socket.data.account && tok() !== device) {
+        const detached = rooms.detachSocket(tok(), socket.id);
+        if (detached) broadcastRoom(detached.room);
+        leaveSocketRoom();
+        socket.data.token = device;
+        return;
+      }
+      if (socket.data.account) return; // con cuenta, el token del navegador no se usa para jugar
+      leaveCurrent();
+    };
+    const requireAccount = () => {
+      if (!socket.data.account) throw new GameError('NO_ACCOUNT', 'Inicia sesión para hacer eso');
+      return socket.data.account;
+    };
+    const accountInfo = (account) => ({ username: account.username, createdAt: account.createdAt });
+    const myGames = (account) => {
+      accounts.prune(account, (code, seat) => rooms.getByToken(seat)?.room.code === code);
+      return account.games.map((g) => rooms.summaryFor(g.seat)).filter(Boolean);
+    };
 
-    // Al (re)conectar, el cliente pregunta si sigue dentro de alguna partida.
+    // ---------- Cuentas ----------
+
+    handle('auth:register', async ({ username, password }) => {
+      const { account, session } = await accounts.register(username, password);
+      exitCurrent();
+      socket.data.account = account;
+      console.log(`Cuenta creada: ${account.username} (${accounts.users.size} en total)`);
+      return { account: accountInfo(account), session, games: [] };
+    });
+
+    handle('auth:login', async ({ username, password }) => {
+      const { account, session } = await accounts.login(username, password);
+      exitCurrent();
+      socket.data.account = account;
+      return { account: accountInfo(account), session, games: myGames(account) };
+    });
+
+    handle('auth:logout', ({ session }) => {
+      exitCurrent();
+      if (session) accounts.logout(session);
+      socket.data.account = null;
+      socket.data.token = device;
+    });
+
+    handle('account:me', () => {
+      const account = socket.data.account;
+      return account ? { account: accountInfo(account), games: myGames(account) } : { account: null };
+    });
+
+    handle('account:games', () => ({ games: myGames(requireAccount()) }));
+
+    // Entra en una de tus partidas (sin salir de las demás).
+    handle('room:enter', ({ code }) => {
+      const account = requireAccount();
+      const clean = normalizeCode(code);
+      const seat = accounts.seatFor(account, clean);
+      if (!seat || rooms.getByToken(seat)?.room.code !== clean) {
+        accounts.removeGame(account, clean);
+        throw new GameError('NOT_FOUND', 'Esa partida ya no existe');
+      }
+      if (tok() !== seat) exitCurrent();
+      socket.data.token = seat;
+      return enterRoom();
+    });
+
+    // Vuelve al menú «Mis partidas» sin abandonar la partida.
+    handle('room:detach', () => {
+      exitCurrent();
+    });
+
+    // Al (re)conectar, el cliente pregunta si sigue dentro de alguna partida (invitados).
     handle('session:resume', () => {
-      if (!rooms.getByToken(token)) return { restored: false };
+      if (socket.data.account || !rooms.getByToken(tok())) return { restored: false };
       return { restored: true, ...enterRoom() };
     });
 
     handle('room:create', ({ name, avatar }) => {
-      leaveCurrent();
-      const { room } = rooms.createRoom(token, name, avatar);
-      console.log(`Sala ${room.code} creada (${rooms.rooms.size} activas)`);
+      const account = socket.data.account;
+      exitCurrent();
+      if (account) {
+        const seat = randomId(16);
+        const { room } = rooms.createRoom(seat, account.username, avatar, { persistent: true });
+        accounts.addGame(account, room.code, seat);
+        socket.data.token = seat;
+      } else {
+        rooms.createRoom(tok(), name, avatar);
+      }
+      console.log(`Sala ${rooms.getByToken(tok()).room.code} creada (${rooms.rooms.size} activas)`);
       return enterRoom();
     });
 
     handle('room:join', ({ name, code, avatar }) => {
-      leaveCurrent();
-      rooms.joinRoom(token, name, code, avatar);
+      const account = socket.data.account;
+      if (!account) {
+        leaveCurrent();
+        rooms.joinRoom(tok(), name, code, avatar);
+        return enterRoom();
+      }
+      // Con cuenta: si ya estás en esa partida, simplemente entras.
+      const clean = normalizeCode(code);
+      const existing = accounts.seatFor(account, clean);
+      if (existing && rooms.getByToken(existing)?.room.code === clean) {
+        if (tok() !== existing) exitCurrent();
+        socket.data.token = existing;
+        return enterRoom();
+      }
+      const seat = randomId(16);
+      rooms.joinRoom(seat, account.username, clean, avatar, { persistent: true });
+      exitCurrent();
+      accounts.addGame(account, clean, seat);
+      socket.data.token = seat;
       return enterRoom();
     });
 
     handle('room:leave', () => {
+      const account = socket.data.account;
+      const code = rooms.getByToken(tok())?.room.code;
       leaveCurrent();
+      if (account && code) accounts.removeGame(account, code);
+      if (account) socket.data.token = device;
     });
 
     handle('room:settings', ({ patch }) => {
@@ -222,6 +335,7 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
       if (targetSocket) {
         targetSocket.leave(room.code);
         targetSocket.data.code = null;
+        targetSocket.data.token = targetSocket.data.device;
         targetSocket.emit('room:kicked');
       }
       broadcastRoom(room);
@@ -365,7 +479,7 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
     });
 
     socket.on('disconnect', () => {
-      const detached = rooms.detachSocket(token, socket.id);
+      const detached = rooms.detachSocket(tok(), socket.id);
       if (detached) broadcastRoom(detached.room);
     });
   });
@@ -411,5 +525,5 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
     io.close(() => resolve());
   });
 
-  return { app, server, io, rooms, close };
+  return { app, server, io, rooms, accounts, close };
 }

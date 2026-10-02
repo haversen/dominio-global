@@ -33,7 +33,37 @@
       </header>
 
       <section class="panel menu-panel">
-        <label class="field">
+        <!-- Cuenta: sin sesión -->
+        <div id="account-out" class="account-box">
+          <nav class="tabs account-tabs">
+            <button type="button" class="tab active" data-mode="login">Iniciar sesión</button>
+            <button type="button" class="tab" data-mode="register">Crear cuenta</button>
+          </nav>
+          <form id="auth-form" class="auth-form" autocomplete="on">
+            <label class="field">
+              <span>Usuario</span>
+              <input id="auth-user" type="text" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="Ej. general_ortega">
+            </label>
+            <label class="field">
+              <span>Contraseña</span>
+              <input id="auth-pass" type="password" maxlength="72" autocomplete="current-password" placeholder="Mínimo 6 caracteres">
+            </label>
+            <button id="btn-auth" type="submit" class="btn btn-primary btn-lg">Iniciar sesión</button>
+            <p id="auth-hint" class="muted small">Con una cuenta tus partidas se guardan y puedes jugar varias a la vez, desde cualquier dispositivo.</p>
+          </form>
+          <div class="or-divider"><span>o juega como invitado</span></div>
+        </div>
+        <!-- Cuenta: con sesión -->
+        <div id="account-in" class="account-in hidden">
+          <span class="account-avatar">👤</span>
+          <div class="account-who">
+            <span class="eyebrow">Sesión iniciada</span>
+            <strong id="account-name"></strong>
+          </div>
+          <button id="btn-logout" type="button" class="btn btn-ghost btn-sm">Cerrar sesión</button>
+        </div>
+
+        <label id="guest-name" class="field">
           <span>Nombre de comandante</span>
           <input id="input-name" type="text" maxlength="16" autocomplete="nickname" placeholder="Ej. General Ortega">
         </label>
@@ -55,7 +85,15 @@
         </form>
       </section>
 
-      <footer class="menu-footer">v1.6 · Dominio Global</footer>
+      <section id="my-games" class="panel my-games hidden">
+        <div class="panel-head">
+          <h3>Mis partidas</h3>
+          <button id="btn-refresh-games" type="button" class="btn btn-ghost btn-xs" title="Actualizar">↻ Actualizar</button>
+        </div>
+        <div id="games-list" class="games-list"></div>
+      </section>
+
+      <footer class="menu-footer">v1.7 · Dominio Global</footer>
     </div>
   </main>
 
@@ -73,6 +111,7 @@
         <button id="btn-copy-link" class="btn btn-sm">Copiar invitación</button>
       </div>
       <button class="btn btn-ghost btn-sm btn-mute" title="Silenciar o activar el sonido">🔊</button>
+      <button class="btn btn-ghost btn-sm btn-my-games hidden" title="Volver a Mis partidas sin salir de esta">☰ Mis partidas</button>
       <button id="btn-leave" class="btn btn-ghost btn-sm">Salir</button>
     </header>
 
@@ -153,6 +192,7 @@
       <button class="btn btn-sm topbar-btn btn-mute" title="Silenciar o activar el sonido">🔊</button>
       <span class="game-clock" title="Tiempo de partida"><span id="game-clock">00:00</span></span>
       <span class="room-tag">Sala <strong id="game-code"></strong></span>
+      <button class="btn btn-sm topbar-btn btn-my-games hidden" title="Volver a Mis partidas sin abandonar esta"><span class="btn-icon">☰</span><span class="btn-label">Partidas</span></button>
       <button id="btn-leave-game" class="btn btn-ghost btn-sm topbar-btn" title="Abandonar la partida"><span class="btn-icon">✕</span><span class="btn-label">Abandonar</span></button>
     </header>
 

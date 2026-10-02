@@ -39,6 +39,16 @@ El repositorio incluye `render.yaml`, así que Render lo configura solo.
 
 Notas del plan gratuito: el servidor «se duerme» tras 15 minutos sin visitas y tarda ~1 minuto en despertar.
 
+### Cuentas y «Mis partidas»
+
+En el menú se puede **crear una cuenta** o **iniciar sesión** (usuario y contraseña), o seguir jugando como invitado. Con cuenta:
+
+- Tus partidas quedan guardadas en tu cuenta y aparecen en **Mis partidas**, con su estado, tu país y los jugadores. Puedes estar en varias partidas a la vez y entrar en la que quieras.
+- El botón **☰ Partidas** (en la sala y en la partida) vuelve al menú **sin abandonar** la partida.
+- Puedes iniciar sesión en otro dispositivo y seguir donde lo dejaste.
+
+Seguridad (`server/accounts.js`): las contraseñas se guardan como huella *scrypt* con sal (nunca en claro), las sesiones son claves aleatorias de las que solo se guarda el hash, y tras 5 intentos fallidos el usuario queda bloqueado un minuto. Las cuentas se guardan junto a las partidas (`data/accounts.json` o Upstash).
+
 ### Partidas largas (de días o una semana)
 
 Las partidas en marcha se guardan cada minuto y al apagarse el servidor, y se recuperan al arrancar (`server/storage.js`). Mientras tanto el mundo sigue: si nadie está conectado, los ingresos y los ejércitos siguen avanzando, y una partida sin nadie dura hasta 8 días. Cada dispositivo recuerda a su jugador, así que basta con volver a abrir la página para seguir.
@@ -270,6 +280,13 @@ Todas las acciones del cliente usan *acknowledgements*: el servidor responde `{ 
 | Cliente → servidor | Datos                  | Descripción                          |
 |--------------------|------------------------|--------------------------------------|
 | `session:resume`   | —                      | Recupera la sala tras recargar/corte |
+| `auth:register`    | `{ username, password }` | Crea una cuenta y abre sesión (devuelve `session`) |
+| `auth:login`       | `{ username, password }` | Inicia sesión |
+| `auth:logout`      | `{ session }`          | Cierra la sesión                     |
+| `account:me`       | —                      | Cuenta y partidas de la sesión actual |
+| `account:games`    | —                      | Lista de «Mis partidas»              |
+| `room:enter`       | `{ code }`             | Entra en una de tus partidas         |
+| `room:detach`      | —                      | Vuelve al menú sin abandonar la partida |
 | `room:create`      | `{ name, avatar? }`    | Crea sala y te hace anfitrión        |
 | `room:join`        | `{ name, code, avatar? }` | Entra en una sala por código      |
 | `room:profile`     | `{ avatar?, president?, country? }` | Tu avatar, presidente y país en la sala |

@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 const KEY_PREFIX = 'dominio:room:';
 const INDEX_KEY = 'dominio:rooms';
+const ACCOUNTS_KEY = 'dominio:accounts';
 const TTL_SECONDS = 8 * 24 * 60 * 60; // una partida abandonada desaparece a los 8 días
 const BATCH = 8;
 
@@ -32,8 +33,24 @@ export function createStorage(env = process.env) {
 }
 
 function fileStorage(file) {
+  const accountsFile = path.join(path.dirname(file), 'accounts.json');
+  const writeAtomic = async (target, data) => {
+    await mkdir(path.dirname(target), { recursive: true });
+    const tmp = `${target}.tmp`;
+    await writeFile(tmp, JSON.stringify(data));
+    await rename(tmp, target); // así nunca queda un archivo a medio escribir
+  };
   return {
     kind: `archivo ${file}`,
+    async loadAccounts() {
+      try {
+        return JSON.parse(await readFile(accountsFile, 'utf8'));
+      } catch (err) {
+        if (err.code !== 'ENOENT') console.error('[guardado] No se pudieron leer las cuentas', err.message);
+        return [];
+      }
+    },
+    saveAccounts: (accounts) => writeAtomic(accountsFile, accounts),
     async load() {
       try {
         return JSON.parse(await readFile(file, 'utf8'));
@@ -42,12 +59,7 @@ function fileStorage(file) {
         return [];
       }
     },
-    async save(snapshots) {
-      await mkdir(path.dirname(file), { recursive: true });
-      const tmp = `${file}.tmp`;
-      await writeFile(tmp, JSON.stringify(snapshots));
-      await rename(tmp, file); // así nunca queda un archivo a medio escribir
-    },
+    save: (snapshots) => writeAtomic(file, snapshots),
   };
 }
 
@@ -67,6 +79,13 @@ function redisStorage(url, token) {
   let saved = new Set();
   return {
     kind: 'Upstash Redis',
+    async loadAccounts() {
+      const [res] = await call([['GET', ACCOUNTS_KEY]]);
+      return JSON.parse(res?.result ?? '[]');
+    },
+    async saveAccounts(accounts) {
+      await call([['SET', ACCOUNTS_KEY, JSON.stringify(accounts)]]);
+    },
     async load() {
       const [index] = await call([['GET', INDEX_KEY]]);
       const codes = JSON.parse(index?.result ?? '[]');

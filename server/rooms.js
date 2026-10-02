@@ -20,6 +20,8 @@ export const PLAYER_COLORS = [
 
 // En el lobby, un jugador desconectado conserva su plaza este tiempo antes de ser expulsado.
 export const LOBBY_RECONNECT_GRACE_MS = 30_000;
+// Los jugadores con cuenta pueden salir al menú: en el lobby conservan la plaza más tiempo.
+export const ACCOUNT_LOBBY_GRACE_MS = 30 * 60_000;
 // Una sala sin nadie conectado se borra tras este tiempo (según su estado).
 // Una partida en marcha aguanta días sin nadie conectado: se puede jugar a lo largo de una semana.
 export const EMPTY_ROOM_TTL_MS = {
@@ -91,7 +93,8 @@ export class RoomManager {
 
   // ---------- Entrar / salir ----------
 
-  createRoom(token, rawName, avatar) {
+  /** opts.persistent: plaza de una cuenta (puede salir al menú y volver más tarde). */
+  createRoom(token, rawName, avatar, opts = {}) {
     const name = requireName(rawName);
     this.leave(token);
 
@@ -113,13 +116,13 @@ export class RoomManager {
     };
     this.rooms.set(code, room);
 
-    const player = this.#addPlayer(room, token, name, avatar);
+    const player = this.#addPlayer(room, token, name, avatar, opts);
     room.hostId = player.id;
     this.#system(room, `${name} ha creado la partida`);
     return { room, player };
   }
 
-  joinRoom(token, rawName, rawCode, avatar) {
+  joinRoom(token, rawName, rawCode, avatar, opts = {}) {
     const name = requireName(rawName);
     const code = normalizeCode(rawCode);
     const room = this.rooms.get(code);
@@ -135,7 +138,7 @@ export class RoomManager {
     }
 
     this.leave(token);
-    const player = this.#addPlayer(room, token, name, avatar);
+    const player = this.#addPlayer(room, token, name, avatar, opts);
     this.#system(room, `${name} se ha unido`);
     return { room, player };
   }
@@ -503,7 +506,8 @@ export class RoomManager {
     for (const room of [...this.rooms.values()]) {
       if (room.state === 'lobby') {
         for (const p of [...room.players.values()]) {
-          if (!p.connected && now - p.disconnectedAt > LOBBY_RECONNECT_GRACE_MS) {
+          const grace = p.persistent ? ACCOUNT_LOBBY_GRACE_MS : LOBBY_RECONNECT_GRACE_MS;
+          if (!p.connected && now - p.disconnectedAt > grace) {
             const roomGone = this.#removePlayer(room, p, `${p.name} no ha vuelto y deja su plaza`);
             if (roomGone) break;
             changed.add(room);
@@ -517,7 +521,9 @@ export class RoomManager {
         continue;
       }
 
-      if (room.emptySince && now - room.emptySince > EMPTY_ROOM_TTL_MS[room.state]) {
+      const ttl = room.state === 'lobby' && [...room.players.values()].some((p) => p.persistent)
+        ? ACCOUNT_LOBBY_GRACE_MS : EMPTY_ROOM_TTL_MS[room.state];
+      if (room.emptySince && now - room.emptySince > ttl) {
         this.#deleteRoom(room);
         deleted.push(room.code);
         changed.delete(room);
@@ -526,12 +532,41 @@ export class RoomManager {
     return { changed: [...changed], deleted };
   }
 
+  /** Resumen de una partida para el menú «Mis partidas». */
+  summaryFor(token) {
+    const ref = this.getByToken(token);
+    if (!ref) return null;
+    const { room, player } = ref;
+    const game = room.game;
+    const country = game?.homes[player.id] ?? game?.picks?.[player.id] ?? player.country;
+    return {
+      code: room.code,
+      state: room.state,
+      phase: game?.phase ?? null,
+      isHost: room.hostId === player.id,
+      scenario: room.settings.mapScenario,
+      maxPlayers: room.settings.maxPlayers,
+      startedAt: room.startedAt,
+      players: [...room.players.values()].map((p) => ({ name: p.name, avatar: p.avatar, color: p.color, connected: p.connected })),
+      you: {
+        name: player.name,
+        color: player.color,
+        avatar: player.avatar,
+        country: country ?? null,
+        eliminated: Boolean(game?.players[player.id]?.eliminated),
+        won: game?.result ? game.result.winner === player.id : null,
+        countries: game ? Object.values(game.countries).filter((c) => c.owner === player.id).length : 0,
+      },
+    };
+  }
+
   // ---------- Guardado (para sobrevivir a reinicios del servidor) ----------
 
-  /** Copia serializable de las partidas en marcha. */
+  /** Copia serializable de las partidas en marcha (y de las salas de espera de jugadores con cuenta). */
   serialize() {
     return [...this.rooms.values()]
-      .filter((room) => room.state === 'playing' && room.game)
+      .filter((room) => (room.state === 'playing' && room.game)
+        || (room.state === 'lobby' && [...room.players.values()].some((p) => p.persistent)))
       .map((room) => ({
         code: room.code,
         state: room.state,
@@ -544,7 +579,7 @@ export class RoomManager {
         game: room.game,
         players: [...room.players.values()].map((p) => ({
           id: p.id, token: p.token, name: p.name, color: p.color, avatar: p.avatar,
-          president: p.president, country: p.country,
+          president: p.president, country: p.country, persistent: p.persistent,
         })),
       }));
   }
@@ -553,18 +588,19 @@ export class RoomManager {
   restore(snapshots, now = Date.now()) {
     let count = 0;
     for (const snap of snapshots ?? []) {
-      if (!snap?.code || this.rooms.has(snap.code) || !snap.game) continue;
+      const lobby = snap?.state === 'lobby';
+      if (!snap?.code || this.rooms.has(snap.code) || (!snap.game && !lobby)) continue;
       const room = {
         code: snap.code,
-        state: 'playing',
+        state: lobby ? 'lobby' : 'playing',
         hostId: snap.hostId,
         settings: { ...defaultSettings(), ...snap.settings },
         players: new Map(),
         chat: snap.chat ?? [],
         createdAt: snap.createdAt ?? now,
-        startedAt: snap.startedAt ?? now,
+        startedAt: lobby ? null : snap.startedAt ?? now,
         emptySince: now,
-        game: snap.game,
+        game: lobby ? null : snap.game,
         dms: new Map(snap.dms ?? []),
       };
       for (const p of snap.players ?? []) {
@@ -574,7 +610,7 @@ export class RoomManager {
           avatar: p.avatar ?? DEFAULT_AVATAR,
           president: p.president ?? DEFAULT_PRESIDENT,
           country: p.country ?? null,
-          ready: true,
+          ready: !lobby,
           connected: false,
           socketId: null,
           disconnectedAt: now,
@@ -592,7 +628,7 @@ export class RoomManager {
 
   // ---------- Internos ----------
 
-  #addPlayer(room, token, name, avatar) {
+  #addPlayer(room, token, name, avatar, { persistent = false } = {}) {
     const usedColors = new Set([...room.players.values()].map((p) => p.color));
     const player = {
       id: randomId(),
@@ -603,6 +639,7 @@ export class RoomManager {
       avatar: AVATARS.includes(avatar) ? avatar : DEFAULT_AVATAR,
       president: DEFAULT_PRESIDENT,
       country: null,    // país elegido en la sala (null = el que toque)
+      persistent,       // jugador con cuenta: conserva su plaza aunque salga al menú
       connected: false, // pasa a true cuando se asocia el socket
       socketId: null,
       disconnectedAt: null,

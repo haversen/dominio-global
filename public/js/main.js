@@ -1,5 +1,5 @@
 import { SETTINGS_SCHEMA, optionLabel } from '/shared/settings.js';
-import { socket, request } from './net.js';
+import { socket, request, getSession, setSession } from './net.js';
 import { $, h, toast, copyText, avatarEl } from './dom.js';
 import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, PRESIDENT_IDS } from '/shared/leaders.js';
 import { scenarioOf, inScenario } from '/shared/scenarios.js';
@@ -21,6 +21,8 @@ const state = {
   me: null,    // id público de este jugador
   room: null,  // última instantánea de la sala
   self: null,  // datos privados de la partida (recursos, ingresos, informe)
+  account: null, // { username } si se ha iniciado sesión
+  games: [],     // «Mis partidas» de la cuenta
 };
 
 // ================= Pantallas =================
@@ -36,7 +38,11 @@ let worldData = null; // mapa (para elegir país en la sala)
 
 function render() {
   const { room } = state;
-  if (!room) return showScreen('menu');
+  for (const btn of document.querySelectorAll('.btn-my-games')) btn.classList.toggle('hidden', !state.account);
+  if (!room) {
+    renderMenu();
+    return showScreen('menu');
+  }
   // El chat es el mismo panel en el lobby y en la partida: se mueve de sitio.
   const chatPanel = $('#chat-panel');
   if (room.state === 'lobby') {
@@ -91,6 +97,7 @@ function exitToMenu(message, kind = 'info') {
   history.replaceState(null, '', location.pathname);
   render();
   if (message) toast(message, kind);
+  if (state.account) refreshGames();
 }
 
 // ================= Menú principal =================
@@ -100,6 +107,7 @@ const codeInput = $('#input-code');
 nameInput.value = localStorage.getItem(NAME_KEY) ?? '';
 
 function readName() {
+  if (state.account) return state.account.username;
   const name = nameInput.value.trim();
   if (name.length < 2) {
     toast('Escribe un nombre de al menos 2 caracteres', 'error');
@@ -154,6 +162,119 @@ $('#menu-join').addEventListener('submit', (e) => {
     enterRoom(res);
   });
 });
+
+// ================= Cuenta y «Mis partidas» =================
+
+let authMode = 'login';
+for (const tab of document.querySelectorAll('.account-tabs .tab')) {
+  tab.addEventListener('click', () => {
+    authMode = tab.dataset.mode;
+    for (const t of document.querySelectorAll('.account-tabs .tab')) t.classList.toggle('active', t === tab);
+    $('#btn-auth').textContent = authMode === 'login' ? 'Iniciar sesión' : 'Crear cuenta';
+    $('#auth-pass').setAttribute('autocomplete', authMode === 'login' ? 'current-password' : 'new-password');
+    $('#auth-hint').textContent = authMode === 'login'
+      ? 'Con una cuenta tus partidas se guardan y puedes jugar varias a la vez, desde cualquier dispositivo.'
+      : 'Elige un usuario (3 a 16 letras o números) y una contraseña de al menos 6 caracteres. No la compartas.';
+  });
+}
+
+function setAccount(account, games = []) {
+  state.account = account;
+  state.games = games;
+  render();
+}
+
+$('#auth-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const username = $('#auth-user').value.trim();
+  const password = $('#auth-pass').value;
+  withBusy($('#btn-auth'), async () => {
+    const res = await request(authMode === 'login' ? 'auth:login' : 'auth:register', { username, password });
+    if (!res.ok) return toast(res.error, 'error');
+    $('#auth-pass').value = '';
+    setSession(res.session);
+    setAccount(res.account, res.games);
+    toast(authMode === 'login' ? `¡Hola de nuevo, ${res.account.username}!` : `Cuenta creada. ¡Bienvenido, ${res.account.username}!`, 'success');
+  });
+});
+
+$('#btn-logout').addEventListener('click', async () => {
+  await request('auth:logout', { session: getSession() });
+  setSession(null);
+  state.account = null;
+  state.games = [];
+  exitToMenu('Has cerrado la sesión');
+});
+
+async function refreshGames() {
+  if (!state.account) return;
+  const res = await request('account:games');
+  if (res.ok) {
+    state.games = res.games;
+    if (!state.room) renderMenu();
+  }
+}
+$('#btn-refresh-games').addEventListener('click', refreshGames);
+
+// Vuelve al menú sin abandonar la partida (solo con cuenta).
+for (const btn of document.querySelectorAll('.btn-my-games')) {
+  btn.addEventListener('click', async () => {
+    const res = await request('room:detach');
+    if (!res.ok) return toast(res.error, 'error');
+    exitToMenu();
+  });
+}
+
+const STATE_LABEL = { lobby: '🕓 En la sala', playing: '⚔ En juego', finished: '🏁 Terminada' };
+
+function renderMenu() {
+  const logged = Boolean(state.account);
+  $('#account-out').classList.toggle('hidden', logged);
+  $('#account-in').classList.toggle('hidden', !logged);
+  $('#guest-name').classList.toggle('hidden', logged);
+  $('#my-games').classList.toggle('hidden', !logged);
+  if (!logged) return;
+  $('#account-name').textContent = state.account.username;
+  const list = $('#games-list');
+  if (!state.games.length) {
+    list.replaceChildren(h('p', { class: 'muted' }, 'Todavía no tienes partidas. Crea una o únete con un código: aparecerán aquí y podrás volver a ellas cuando quieras.'));
+    return;
+  }
+  list.replaceChildren(...state.games.map(gameCard));
+}
+
+function gameCard(g) {
+  const country = g.you.country && worldData?.byId.get(g.you.country)?.name;
+  let status = STATE_LABEL[g.state] ?? g.state;
+  if (g.state === 'playing' && g.phase === 'picking') status = '🗺 Eligiendo países';
+  if (g.you.eliminated) status = '☠ Eliminado';
+  if (g.you.won === true) status = '🏆 Has ganado';
+  const enter = async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const res = await request('room:enter', { code: g.code });
+    btn.disabled = false;
+    if (!res.ok) {
+      toast(res.error, 'error');
+      return refreshGames();
+    }
+    enterRoom(res);
+  };
+  return h('article', { class: `game-card state-${g.state}${g.you.eliminated ? ' out' : ''}` },
+    h('div', { class: 'game-card-head' },
+      h('span', { class: 'game-card-code' }, g.code),
+      h('span', { class: 'game-card-status' }, status),
+      g.isHost && h('span', { class: 'badge badge-host' }, 'Anfitrión')),
+    h('div', { class: 'game-card-info' },
+      h('span', {}, scenarioOf(g.scenario).label),
+      country && h('span', {}, `Tu país: ${country}${g.you.countries > 1 ? ` (+${g.you.countries - 1})` : ''}`),
+      g.startedAt && h('span', { class: 'muted' }, `Empezó ${new Date(g.startedAt).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`)),
+    h('div', { class: 'game-card-players' },
+      g.players.map((p) => h('span', { class: `game-card-player${p.connected ? ' online' : ''}`, title: `${p.name}${p.connected ? ' · conectado' : ''}` },
+        h('i', { style: { background: p.color } }), p.avatar, ' ', p.name)),
+      h('small', { class: 'muted' }, `${g.players.length}/${g.maxPlayers}`)),
+    h('button', { class: 'btn btn-primary btn-sm game-card-enter', onClick: enter }, g.state === 'lobby' ? 'Ir a la sala' : 'Entrar'));
+}
 
 // Enlace de invitación: /?code=XXXXXX abre directamente el formulario de unión.
 const inviteCode = new URLSearchParams(location.search).get('code');
@@ -488,14 +609,34 @@ function setConn(kind, label) {
 
 socket.on('connect', async () => {
   setConn('online', 'Conectado');
-  // Tras una recarga o un corte de red, recupera la partida en la que estábamos.
   const hadRoom = Boolean(state.room);
+  const currentCode = state.room?.code ?? new URLSearchParams(location.search).get('code');
+
+  // ¿Hay sesión de cuenta? Entonces se vuelve a la partida en la que estábamos (si es nuestra) o al menú.
+  const me = await request('account:me');
+  if (me.ok && me.account) {
+    state.account = me.account;
+    state.games = me.games;
+    const mine = me.games.find((g) => g.code === currentCode);
+    if (mine) {
+      const res = await request('room:enter', { code: mine.code });
+      if (res.ok) return enterRoom(res);
+    }
+    if (hadRoom) return exitToMenu('La partida ya no existe', 'error');
+    return render();
+  }
+  if (getSession()) setSession(null); // sesión caducada o cerrada en otro sitio
+  state.account = null;
+
+  // Invitado: tras una recarga o un corte de red, recupera la partida en la que estábamos.
   const res = await request('session:resume');
   if (res.ok && res.restored) {
     enterRoom(res);
     if (!hadRoom) toast(`Reconectado a la sala ${res.room.code}`, 'success');
   } else if (hadRoom) {
     exitToMenu('La partida ya no existe', 'error');
+  } else {
+    render();
   }
 });
 
@@ -552,4 +693,8 @@ setAppHeight();
 
 buildSettingsForm();
 render();
-loadWorld().catch(() => {}); // precarga el mapa mientras se está en el menú
+// Precarga el mapa mientras se está en el menú (también da los nombres de países de «Mis partidas»).
+loadWorld().then((w) => {
+  worldData = w;
+  if (!state.room) renderMenu();
+}).catch(() => {});
