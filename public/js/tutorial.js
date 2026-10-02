@@ -12,7 +12,7 @@ const STEPS = [
   },
   {
     title: '🪖 Recluta tropas',
-    text: 'En el panel de tu país, pulsa +1 o +5 para entrenar tropas. Cuestan 💰 dinero y otros recursos, y tardan unos segundos en estar listas.',
+    text: 'En el panel de tu país escribe cuántas tropas quieres y pulsa «Reclutar», o usa «Max» para entrenar todas las que puedas pagar. Los lotes grandes tardan más.',
     target: '.recruit-list',
   },
   {
@@ -27,18 +27,18 @@ const STEPS = [
   },
   {
     title: '🔬 Investiga',
-    text: 'Cada rama del árbol tecnológico investiga a la vez: tropas nuevas, bombas y la carrera espacial hasta la Luna.',
-    target: '#btn-tech',
+    text: 'Abre ☰ Menú → 🔬 Tecnología. Cada rama del árbol investiga a la vez: tropas nuevas, bombas y la carrera espacial.',
+    target: '#btn-game-menu',
   },
   {
     title: '🤝 Diplomacia y 🌐 Mundo',
-    text: 'Haz alianzas, comercia y habla en privado. En 🌐 Mundo verás las noticias, las votaciones de la ONU y tu misión secreta.',
-    target: '#btn-diplomacy, #btn-world',
+    text: 'En ☰ Menú están 🤝 Diplomacia (alianzas y mensajes), 📈 Mercado (comercio y préstamos) y 🌐 Mundo (noticias, la ONU y tu misión secreta).',
+    target: '#btn-game-menu',
   },
   {
     title: '★ ¡Protege tu capital!',
-    text: 'Si te conquistan la capital, quedas eliminado. Activa 🔔 para que te avisemos al móvil cuando te ataquen. ¡Suerte!',
-    target: '.btn-notify',
+    text: 'Si te conquistan la capital, quedas eliminado. En ☰ Menú puedes activar 🔔 los avisos al móvil para saber cuándo te atacan. ¡Suerte!',
+    target: '#btn-game-menu',
   },
 ];
 

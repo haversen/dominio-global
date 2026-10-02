@@ -135,5 +135,31 @@ test('perder la capital elimina al jugador y su imperio pasa a ser neutral', () 
 test('equilibrio: cazas más lentos, barcos más rápidos e infantería algo mejor', () => {
   assert.ok(UNITS.aircraft.speed <= 400, 'el caza no es tan rápido');
   assert.ok(UNITS.navy.speed >= 70, 'los barcos van más rápido por mar');
-  assert.ok(UNITS.infantry.attack > 1 && UNITS.infantry.defense > 1.5);
+  assert.ok(UNITS.infantry.attack > 1 && UNITS.infantry.defense > 1);
+});
+
+test('equilibrio: la infantería barata ya no gana siempre defendiendo', async () => {
+  const { resolveBattle, stackFactor } = await import('../shared/military.js');
+  // Defensa por cada moneda: la infantería no puede ser mucho mejor que los tanques.
+  const perMoney = (t) => UNITS[t].defense / UNITS[t].cost.money;
+  assert.ok(perMoney('infantry') < perMoney('tank') * 1.2, `infantería ${perMoney('infantry')} vs tanque ${perMoney('tank')}`);
+  // Acumular cientos de tropas rinde menos por unidad.
+  assert.equal(stackFactor(40), 1);
+  assert.ok(stackFactor(500) < 0.6);
+  // 500 infantes (5.000 de dinero) frente a un ejército de tanques que cuesta lo mismo.
+  const half = () => 0.5;
+  const tanks = { ...emptyUnits(), tank: Math.floor(5000 / UNITS.tank.cost.money) };
+  const r = resolveBattle(tanks, { ...emptyUnits(), infantry: 500 }, { terrain: 'plains' }, half);
+  assert.ok(r.attackerWins, `tanques ${r.attackPower} contra infantería ${r.defensePower}`);
+});
+
+test('reclutar un lote grande tarda más que uno pequeño', () => {
+  const g = createGame({ countryAssignment: 'random' }, ['a'], { now: 0 });
+  tickGame(g, ['a'], PICK_DURATION_MS);
+  const home = g.homes.a;
+  g.players.a.resources = { money: 1e6, food: 1e6, oil: 1e6, industry: 1e6 };
+  assert.equal(recruit(g, 'a', home, 'infantry', 1, PICK_DURATION_MS), null);
+  assert.equal(recruit(g, 'a', home, 'infantry', 100, PICK_DURATION_MS), null);
+  const [one, hundred] = g.countries[home].training;
+  assert.ok(hundred.readyAt - PICK_DURATION_MS > (one.readyAt - PICK_DURATION_MS) * 20);
 });

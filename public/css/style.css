@@ -561,6 +561,10 @@ i.res-icon, .res i.res-icon, .prod i.res-icon, .market-good i.res-icon, .trade-r
 
 .recruit-list { display: grid; gap: 4px; }
 .recruit-row { display: flex; align-items: center; gap: 8px; }
+.recruit-unit { flex-wrap: wrap; row-gap: 2px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.recruit-row input.recruit-qty { width: 72px; min-width: 0; flex: 0 0 72px; padding: 4px 6px; font-family: var(--font-mono); font-size: 14px; text-align: right; }
+.recruit-extra { flex-basis: 100%; display: flex; align-items: center; gap: 8px; padding-left: 30px; }
+.recruit-max { min-width: 84px; }
 .recruit-name { flex: 1; display: grid; font-size: 13px; line-height: 1.2; }
 .recruit-name small { color: var(--muted); font-size: 11px; }
 
@@ -1453,9 +1457,6 @@ button, a, .country { touch-action: manipulation; }
   #screen-menu.active ~ .toasts, #screen-lobby.active ~ .toasts { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
   .side-panel { padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)); }
   .action-bar { padding-bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
-  /* El botón para volver al menú va el primero y con su nombre, para que se encuentre enseguida. */
-  .game-topbar .btn-my-games { order: -1; border-color: var(--accent); color: var(--accent); font-weight: 700; }
-  .game-topbar .btn-my-games .btn-label { display: inline; margin-left: 4px; }
 }
 
 /* Partidas por equipos */
@@ -1468,3 +1469,49 @@ button, a, .country { touch-action: manipulation; }
 .team-option:disabled { opacity: 0.45; cursor: not-allowed; }
 .team-option small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-team { font-size: 11px; margin-right: 2px; }
+
+/* Préstamos */
+.loan-list { display: grid; gap: 6px; margin-bottom: 10px; }
+.loan-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; }
+.loan-row.debt { border-color: rgba(255, 140, 90, 0.5); }
+.loan-row.late { border-color: var(--danger); background: rgba(220, 60, 50, 0.08); }
+.loan-row.credit { border-color: rgba(120, 220, 120, 0.4); }
+.loan-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.loan-fields input, .loan-fields select { width: 100%; }
+
+/* ☰ Menú de la partida */
+.game-topbar { position: relative; }
+.btn-game-menu { margin-left: auto; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+.btn-game-menu .btn-icon { display: inline; }
+.btn-game-menu.active { border-color: var(--accent); color: var(--accent); }
+.game-menu {
+  position: absolute; top: calc(100% + 6px); right: 12px; z-index: 30; width: min(420px, calc(100vw - 24px));
+  display: grid; gap: 12px; padding: 14px; border: 1px solid var(--border-strong); border-radius: 12px;
+  background: rgba(14, 18, 15, 0.98); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  max-height: calc(var(--app-h, 100dvh) - 80px); overflow-y: auto;
+}
+.game-menu.hidden { display: none; }
+.game-menu-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.menu-tile {
+  position: relative; display: grid; justify-items: center; gap: 4px; padding: 12px 6px; border-radius: 10px;
+  border: 1px solid var(--border); background: rgba(255, 255, 255, 0.03); color: inherit; font: inherit; font-size: 13px; cursor: pointer;
+}
+.menu-tile:hover { border-color: var(--accent); }
+.menu-tile .tile-icon { font-size: 24px; line-height: 1; }
+.menu-tile .count { position: absolute; top: 4px; right: 4px; }
+.game-menu-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.menu-option {
+  padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: inherit;
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+button.menu-option:hover { border-color: var(--accent); }
+.menu-option.on { border-color: var(--accent); color: var(--accent); }
+.menu-option.room-tag { display: flex; align-items: center; gap: 6px; cursor: default; }
+.game-menu-exit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; border-top: 1px solid var(--border); padding-top: 10px; }
+@media (max-width: 780px) {
+  .game-menu { position: fixed; top: calc(52px + env(safe-area-inset-top, 0px)); left: 8px; right: 8px; width: auto; }
+  .btn-game-menu { order: -1; margin-left: 0; border-color: var(--accent); color: var(--accent); }
+  .game-menu-exit .btn-my-games { order: -1; }
+}
+.game-menu .room-tag { display: flex !important; }
+.game-menu .btn-my-games { border-color: var(--accent); color: var(--accent); font-weight: 700; }

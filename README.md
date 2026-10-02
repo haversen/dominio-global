@@ -120,6 +120,10 @@ En la sala se elige el ritmo:
 - En la Antigua Grecia las tropas son de la época (`shared/eras.js`): hoplitas, falange, espartanos, caballería, carros, elefantes, arqueros, catapultas, balistas, trirremes, birremes y quinquerremes, con velocidades reales a pie, a caballo y a remo. Los materiales son dracmas, trigo, aceite y bronce; hay flechas incendiarias y fuego griego, pero no bomba nuclear ni carrera espacial.
 - **Partidas por equipos** (ajuste «Equipos»): equipos de 2, de 3 o dos bandos (Eje contra Aliados, OTAN contra Pacto de Varsovia, Liga de Delos contra Liga del Peloponeso…). Los compañeros empiezan aliados, no pueden atacarse y ganan juntos (la dominación suma los países del equipo). En «Dos bandos» cada bando recibe sus países históricos (`shared/teams.js`).
 - Enviar tropas por porcentaje (10–100 %, redondeando hacia abajo).
+- Reclutar escribiendo la cantidad (hasta 500 por orden) o con «Max» (todo lo que puedes pagar). Los lotes grandes tardan más: cada unidad extra añade un 25 % del tiempo de una.
+- Equilibrio: la infantería cuesta más y defiende menos, y por encima de 40 unidades en un mismo combate cada unidad extra cuenta la mitad (`stackFactor` en `shared/military.js`).
+- **Préstamos** (Mercado → 🏦): quien pide elige cantidad, interés y plazo; cualquier jugador o bot puede concederlo y al vencer se cobra solo (con un 10 % de recargo si no hay dinero suficiente). Ver `server/loans.js`.
+- **☰ Menú de la partida**: Diplomacia, Mundo, Mercado, Tecnología, Clasificación, sonido, avisos, gráficos ligeros, tutorial y salir, en un solo botón.
 - La victoria científica (llegar a la Luna) solo existe en la **Guerra Fría**; en los demás mapas la Luna da puntos.
 - Los países neutrales (controlados por la IA) se pintan todos del mismo gris para distinguirlos de los jugadores.
 - Los países de fuera del mapa se ven apagados y no se pueden pisar ni bombardear. El % de dominación se mide sobre el mapa elegido (de Rusia, en Europa, solo cuenta su parte europea).

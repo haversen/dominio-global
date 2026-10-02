@@ -6,6 +6,7 @@ import {
 import {
   UNITS, UNIT_TYPES, GAME_SPEEDS, emptyUnits, addUnits, totalUnits, neutralGarrison, startingArmy,
   moveError, travelMs, resolveBattle, terrainOf, WEAPONS, interceptChance, strikeDamage, paceScale, isNavalRoute,
+  MAX_RECRUIT, BATCH_TIME_STEP,
 } from '../shared/military.js';
 import { SCENARIOS, DEFAULT_SCENARIO, scenarioOf, inScenario, scenarioArea, eraOf, hasSpaceVictory } from '../shared/scenarios.js';
 import { unitLabel, weaponLabel, weaponAllowed, spaceAllowed, strategicSpec } from '../shared/eras.js';
@@ -23,6 +24,7 @@ import { standings, checkVictory } from './victory.js';
 import { encodeCountries } from '../shared/wire.js';
 import { DEFAULT_PRESIDENT, PRESIDENTS, leaderBonus, discountCost } from '../shared/leaders.js';
 import { createMarket, tickMarket, forgetOffers, publicMarket } from './market.js';
+import { tickLoans, publicLoans } from './loans.js';
 import { needOf, hasAccess, missingText } from '../shared/strategic.js';
 import { runSpyMission } from './espionage.js';
 import { createWorld, tickWorld, worldEffects, isSanctioned, nukesBanned, addNews, voteUN } from './world.js';
@@ -53,7 +55,7 @@ export const STABILITY = {
 };
 // Cansancio de guerra: cada unidad perdida cansa a la población y baja los ingresos.
 export const WEARINESS = { perUnitLost: 0.004, max: 0.4, decayPerMinute: 0.02 };
-export const MAX_BATCH = 50; // unidades máximas por orden de reclutamiento
+export const MAX_BATCH = MAX_RECRUIT;
 const MIN_START_AREA_KM2 = 150_000;
 const PREFERRED_START_DISTANCE = 3;
 const EVENT_HISTORY = 30;
@@ -119,6 +121,7 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
     },
     result: null,
     relations: {},
+    loans: [],
     proposals: [],
     armies: [],
     strikes: [],
@@ -327,8 +330,8 @@ export function recruit(game, playerId, countryId, type, count, now = Date.now()
 
   addResources(player.resources, cost, -1);
   // El cuartel del país y las modificaciones del árbol acortan el entrenamiento.
-  const ms = unit.trainMs * trainFactor(country.buildings) * (treeBonus(player.unlocked).train[unit.class] ?? 1)
-    * worldEffects(game, now).train;
+  const ms = unit.trainMs * (1 + (count - 1) * BATCH_TIME_STEP) * trainFactor(country.buildings)
+    * (treeBonus(player.unlocked).train[unit.class] ?? 1) * worldEffects(game, now).train;
   country.training.push({ type, count, readyAt: now + Math.round(ms / game.speed) });
   return null;
 }
@@ -727,6 +730,13 @@ export function tickGame(game, playerIds, now = Date.now(), rng = Math.random) {
 
   if (tickAI(game, COUNTRIES, now)) changed = true;
   if (tickMarket(game, now)) changed = true;
+  // Préstamos: caducan peticiones y se cobran los vencidos.
+  const loanCount = game.loans?.length ?? 0;
+  for (const e of tickLoans(game, now)) {
+    events.push(e);
+    changed = true;
+  }
+  if ((game.loans?.length ?? 0) !== loanCount) changed = true;
 
   // Eventos mundiales y ONU.
   for (const e of tickWorld(game, now, rng, worldCtx(game))) {
@@ -1060,6 +1070,7 @@ export function publicGame(game, viewerId = null, now = Date.now()) {
     relations: game.relations,
     teams: game.teams ?? null,
     market: publicMarket(game.market),
+    loans: publicLoans(game),
     presidents: Object.fromEntries(Object.entries(game.players).map(([id, p]) => [id, p.president])),
     victory: game.victory,
     result: game.result,

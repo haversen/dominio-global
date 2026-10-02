@@ -531,6 +531,31 @@ export function createGameServer({
       broadcastRoom(room);
     });
 
+    handle('loan:request', ({ amount, interest, term }) => {
+      const { room, player } = current();
+      const loan = rooms.requestLoan(room, player, { amount, interest, term });
+      broadcastRoom(room);
+      return { loanId: loan.id };
+    });
+
+    handle('loan:fund', ({ loanId }) => {
+      const { room, player } = current();
+      rooms.fundLoan(room, player, loanId);
+      broadcastRoom(room);
+    });
+
+    handle('loan:cancel', ({ loanId }) => {
+      const { room, player } = current();
+      rooms.cancelLoan(room, player, loanId);
+      broadcastRoom(room);
+    });
+
+    handle('loan:repay', ({ loanId }) => {
+      const { room, player } = current();
+      rooms.repayLoan(room, player, loanId);
+      broadcastRoom(room);
+    });
+
     handle('market:cancel', ({ offerId }) => {
       const { room, player } = current();
       rooms.cancelOffer(room, player, offerId);

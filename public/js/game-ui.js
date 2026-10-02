@@ -9,7 +9,7 @@ import { teamName, TEAM_ICONS } from '/shared/teams.js';
 import { STRATEGIC, strategicOf, needOf, hasAccess } from '/shared/strategic.js';
 import { SPY_MISSIONS, SPY_MISSION_IDS } from '/shared/espionage.js';
 import {
-  BUILDINGS, BUILDING_TYPES, MAX_BUILDING_LEVEL, buildingSlots, usedSlots, buildingCost, buildingMs, buildingIncome,
+  BUILDINGS, BUILDING_TYPES, MAX_BUILDING_LEVEL, buildingSlots, usedSlots, buildingCost, buildingMs, buildingIncome, trainFactor,
   buildError,
 } from '/shared/buildings.js';
 import { request } from './net.js';
@@ -18,7 +18,7 @@ import {
 } from '/shared/economy.js';
 import {
   UNITS, UNIT_TYPES, TERRAIN_INFO, terrainOf, totalUnits, moveError, travelMs, emptyUnits, domainCount, isNavalRoute,
-  WEAPONS, WEAPON_TYPES,
+  WEAPONS, WEAPON_TYPES, MAX_RECRUIT, BATCH_TIME_STEP,
 } from '/shared/military.js';
 import { RELATIONS, relationOf } from '/shared/diplomacy.js';
 import { techBonus, isUnlocked, treeBonus } from '/shared/tech.js';
@@ -96,6 +96,27 @@ export class GameView {
     $('#btn-zoom-out').addEventListener('click', () => this.map?.zoomBy(1 / 1.6));
     $('#btn-zoom-reset').addEventListener('click', () => this.map?.reset());
     $('#btn-tutorial').addEventListener('click', () => startTutorial());
+    // ☰ Menú de la partida: se abre y se cierra al pulsar fuera, con Esc o al elegir una opción.
+    const menu = $('#game-menu');
+    const menuBtn = $('#btn-game-menu');
+    const setMenu = (open) => {
+      menu.classList.toggle('hidden', !open);
+      menuBtn.setAttribute('aria-expanded', String(open));
+      menuBtn.classList.toggle('active', open);
+    };
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setMenu(menu.classList.contains('hidden'));
+    });
+    menu.addEventListener('click', (e) => {
+      // Sonido, avisos y gráficos se cambian sin cerrar el menú; lo demás lo cierra.
+      const btn = e.target.closest('button');
+      if (btn && !btn.matches('.btn-mute, .btn-notify, #btn-gfx')) setMenu(false);
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (!menu.classList.contains('hidden') && !menu.contains(e.target) && !menuBtn.contains(e.target)) setMenu(false);
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setMenu(false); });
     $('#btn-gfx').addEventListener('click', () => {
       if (!this.map) return;
       this.map.setLowGraphics(!this.map.lowGfx);
@@ -611,27 +632,60 @@ export class GameView {
         const blocked = unit.domain === 'sea' && !c.coastal;
         const missing = this.#missingStrategic(this.#ctx(), { unit: t });
         const unitCost = discountCost(unit.cost, leaderBonus(self?.president).cost);
-        const buy = (n) => {
-          const cost = Object.fromEntries(Object.entries(unitCost).map(([r, v]) => [r, v * n]));
-          const ok = !blocked && !missing && self && canAfford(self.resources, cost);
-          return h('button', {
-            class: 'btn btn-xs',
-            disabled: !ok,
-            title: blocked ? 'Solo en países con costa' : missing ? `Necesitas ${STRATEGIC[missing].label.toLowerCase()}` : `Coste: ${costText(cost)}`,
-            onClick: async (e) => {
-              e.currentTarget.disabled = true;
-              const res = await request('game:recruit', { countryId: c.id, type: t, count: n });
-              if (!res.ok) toast(res.error, 'error');
-              else play('recruit');
-            },
-          }, `+${n}`);
+        // Lo máximo que se puede pagar ahora mismo (sin pasar del límite por orden).
+        const max = blocked || missing || !self ? 0 : Math.min(MAX_RECRUIT,
+          ...Object.entries(unitCost).map(([r, v]) => (v > 0 ? Math.floor((self.resources[r] ?? 0) / v) : MAX_RECRUIT)));
+        this.recruitQty ??= {};
+        const qty = Math.max(1, Math.min(MAX_RECRUIT, this.recruitQty[t] ?? 1));
+        const recruit = async (n, btn) => {
+          if (!n) return;
+          btn.disabled = true;
+          const res = await request('game:recruit', { countryId: c.id, type: t, count: n });
+          if (!res.ok) toast(res.error, 'error');
+          else {
+            play('recruit');
+            toast(`${unit.icon} ${n} × ${unit.label} en entrenamiento`, 'success', 2000);
+          }
+          document.activeElement?.blur?.();
+          this.#renderPanel();
         };
-        return h('div', { class: 'recruit-row' },
+        const reason = blocked ? 'requiere costa'
+          : missing ? `falta ${STRATEGIC[missing].icon} ${STRATEGIC[missing].label.toLowerCase()}` : null;
+        const input = h('input', {
+          type: 'number', min: 1, max: MAX_RECRUIT, step: 1, value: qty, inputmode: 'numeric',
+          class: 'recruit-qty', 'aria-label': `Cantidad de ${unit.label}`, disabled: Boolean(reason),
+          onInput: (e) => { this.recruitQty[t] = Math.floor(Number(e.target.value)) || 1; },
+          onKeydown: (e) => { if (e.key === 'Enter') recruit(Math.floor(Number(e.target.value)) || 0, e.target); },
+          onBlur: () => setTimeout(() => this.#renderPanel(), 0),
+        });
+        const time = secondsText(this.#trainMs(c, t, qty));
+        return h('div', { class: 'recruit-row recruit-unit' },
           h('span', { class: 'unit-icon' }, unit.icon),
-          h('span', { class: 'recruit-name' }, unit.label, h('small', {}, blocked ? 'requiere costa'
-            : missing ? `falta ${STRATEGIC[missing].icon} ${STRATEGIC[missing].label.toLowerCase()}` : costText(unitCost))),
-          buy(1), buy(5));
+          h('span', { class: 'recruit-name' }, unit.label, h('small', {}, reason ?? `${costText(unitCost)} c/u`)),
+          input,
+          h('button', {
+            class: 'btn btn-xs btn-primary',
+            disabled: Boolean(reason) || qty > max,
+            title: qty > max ? 'No tienes recursos suficientes para tantas' : `Coste: ${costText(Object.fromEntries(Object.entries(unitCost).map(([r, v]) => [r, v * qty])))} · ${time}`,
+            onClick: (e) => recruit(Math.floor(Number(input.value)) || 0, e.currentTarget),
+          }, 'Reclutar'),
+          h('div', { class: 'recruit-extra' },
+            h('button', {
+              class: 'btn btn-ghost btn-xs recruit-max',
+              disabled: max < 1,
+              title: max < 1 ? 'No te llega para ninguna' : `Reclutar ${max} (todo lo que puedes pagar)`,
+              onClick: (e) => recruit(max, e.currentTarget),
+            }, `Max · ${max}`),
+            h('small', { class: 'muted' }, `⏱ ${qty} en ${time}`)));
       })));
+  }
+
+  // Tiempo de entrenamiento de un lote (como en el servidor: los lotes grandes tardan más).
+  #trainMs(c, type, count) {
+    const { game, self } = this.#ctx();
+    const state = game.countries[c.id];
+    return (UNITS[type].trainMs * (1 + (count - 1) * BATCH_TIME_STEP) * trainFactor(state?.buildings)
+      * (treeBonus(self?.unlocked).train[UNITS[type].class] ?? 1)) / game.speed;
   }
 
   // Espionaje contra un país ajeno.
@@ -856,7 +910,10 @@ export class GameView {
         type: 'range', min: 0, max: 100, step: 5, value: pctOf ?? Math.round((totalUnits(chosen) / totalUnits(available)) * 100),
         'aria-label': 'Porcentaje de tropas a enviar',
         onInput: (e) => { e.target.nextSibling.textContent = `${e.target.value} %`; },
-        onChange: (e) => byPercent(Number(e.target.value)),
+        onChange: (e) => {
+          e.target.blur(); // con el control enfocado el panel no se redibuja
+          byPercent(Number(e.target.value));
+        },
       }),
       h('b', { class: 'send-percent-value' }, `${pctOf ?? Math.round((totalUnits(chosen) / totalUnits(available)) * 100)} %`));
 

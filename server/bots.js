@@ -52,6 +52,7 @@ export function runBots(rm, room, now, rng = Math.random) {
     const mood = PERSONALITY[room.settings.aiDifficulty] ?? PERSONALITY.normal;
     respondToProposals(rm, room, bot, game, rng);
     voteInUN(rm, room, bot, game);
+    lend(rm, room, bot, game, me, rng);
     // Cada turno elige una prioridad para no gastarlo todo en lo mismo.
     const roll = rng();
     if (roll < 0.3) research(rm, room, bot, me);
@@ -78,6 +79,17 @@ function respondToProposals(rm, room, bot, game, rng) {
     }
     if (PROPOSALS[p.type]) safely(() => rm.respondProposal(room, bot, p.id, accept));
   }
+}
+
+// Los bots prestan dinero si el interés les compensa y les sobra.
+const LEND_MIN_INTEREST = 8;
+const LEND_RESERVE = 150;
+function lend(rm, room, bot, game, me, rng) {
+  const loan = (game.loans ?? []).find((l) => l.status === 'open' && l.borrower !== bot.id
+    && l.interest >= LEND_MIN_INTEREST && me.resources.money >= l.amount + LEND_RESERVE
+    && relationOf(game.relations, bot.id, l.borrower).state !== 'war');
+  // Cuanto más interés ofrece, antes se anima.
+  if (loan && rng() < Math.min(0.9, loan.interest / 40)) safely(() => rm.fundLoan(room, bot, loan.id));
 }
 
 function voteInUN(rm, room, bot, game) {

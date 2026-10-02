@@ -172,7 +172,8 @@ test('reclutar: cuesta recursos y las unidades llegan tras el entrenamiento', ()
   assert.equal(game.players.a.resources.money, STARTING_RESOURCES.money - UNITS.infantry.cost.money * 5);
   assert.equal(game.countries.ESP.units.infantry, before);
 
-  tickGame(game, ['a', 'b'], T0 + UNITS.infantry.trainMs);
+  // Un lote de 5 tarda el tiempo de una unidad más un 25 % por cada unidad extra.
+  tickGame(game, ['a', 'b'], T0 + UNITS.infantry.trainMs * 2);
   assert.equal(game.countries.ESP.units.infantry, before + 5);
 
   assert.match(recruit(game, 'b', 'CHE', 'navy', 1, T0), /costa/);

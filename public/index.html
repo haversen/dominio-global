@@ -220,17 +220,31 @@
       <div class="game-brand">DOMINIO <span>GLOBAL</span></div>
       <div id="resources" class="resources"></div>
       <div id="game-players" class="player-chips"></div>
-      <button id="btn-diplomacy" class="btn btn-sm topbar-btn" title="Diplomacia y mensajes"><span class="btn-icon">🤝</span><span class="btn-label">Diplomacia</span> <span id="diplo-count" class="count hidden">0</span></button>
-      <button id="btn-world" class="btn btn-sm topbar-btn" title="Mundo: noticias, ONU y tu misión secreta"><span class="btn-icon">🌐</span><span class="btn-label">Mundo</span> <span id="world-count" class="count hidden">0</span></button>
-      <button id="btn-market" class="btn btn-sm topbar-btn" title="Mercado de materiales"><span class="btn-icon">📈</span><span class="btn-label">Mercado</span> <span id="market-count" class="count hidden">0</span></button>
-      <button id="btn-tech" class="btn btn-sm topbar-btn" title="Tecnología"><span class="btn-icon">🔬</span><span class="btn-label">Tecnología</span> <span id="tech-progress" class="count hidden"></span></button>
-      <button id="btn-ranking" class="btn btn-sm topbar-btn" title="Clasificación y objetivos">🏆</button>
-      <button class="btn btn-sm topbar-btn btn-mute" title="Silenciar o activar el sonido">🔊</button>
-      <button class="btn btn-sm topbar-btn btn-notify" title="Avisos al móvil">🔕</button>
       <span class="game-clock" title="Tiempo de partida"><span id="game-clock">00:00</span></span>
-      <span class="room-tag">Sala <strong id="game-code"></strong></span>
-      <button class="btn btn-sm topbar-btn btn-my-games" title="Salir al menú sin abandonar la partida"><span class="btn-icon">🏠</span><span class="btn-label">Menú</span></button>
-      <button id="btn-leave-game" class="btn btn-ghost btn-sm topbar-btn" title="Abandonar la partida"><span class="btn-icon">✕</span><span class="btn-label">Abandonar</span></button>
+      <button id="btn-game-menu" class="btn btn-sm topbar-btn btn-game-menu" title="Menú de la partida" aria-haspopup="true" aria-expanded="false">
+        <span class="btn-icon">☰</span><span class="menu-label">Menú</span> <span id="menu-count" class="count hidden">0</span>
+      </button>
+      <!-- Menú de la partida: todas las pantallas y opciones en un solo sitio. -->
+      <div id="game-menu" class="game-menu hidden" role="menu">
+        <div class="game-menu-grid">
+          <button id="btn-diplomacy" class="menu-tile" title="Diplomacia y mensajes"><span class="tile-icon">🤝</span><span>Diplomacia</span><span id="diplo-count" class="count hidden">0</span></button>
+          <button id="btn-world" class="menu-tile" title="Mundo: noticias, ONU y tu misión secreta"><span class="tile-icon">🌐</span><span>Mundo</span><span id="world-count" class="count hidden">0</span></button>
+          <button id="btn-market" class="menu-tile" title="Mercado y préstamos"><span class="tile-icon">📈</span><span>Mercado</span><span id="market-count" class="count hidden">0</span></button>
+          <button id="btn-tech" class="menu-tile" title="Tecnología"><span class="tile-icon">🔬</span><span>Tecnología</span><span id="tech-progress" class="count hidden"></span></button>
+          <button id="btn-ranking" class="menu-tile" title="Clasificación y objetivos"><span class="tile-icon">🏆</span><span>Clasificación</span></button>
+        </div>
+        <div class="game-menu-options">
+          <button class="menu-option btn-mute">🔊</button>
+          <button class="menu-option btn-notify notify-menu">🔕</button>
+          <button id="btn-gfx" class="menu-option" title="Gráficos ligeros (para móviles lentos)">⚡ Gráficos ligeros</button>
+          <button id="btn-tutorial" class="menu-option" title="Ver el tutorial">❓ Ver el tutorial</button>
+          <span class="menu-option room-tag">Sala <strong id="game-code"></strong></span>
+        </div>
+        <div class="game-menu-exit">
+          <button class="btn btn-sm btn-my-games" title="Salir al menú sin abandonar la partida">🏠 Volver al menú principal</button>
+          <button id="btn-leave-game" class="btn btn-ghost btn-sm" title="Abandonar la partida">✕ Abandonar la partida</button>
+        </div>
+      </div>
     </header>
 
     <div class="game-body">
@@ -258,8 +272,6 @@
           <button id="btn-zoom-out" class="btn btn-sm" title="Alejar">−</button>
           <button id="btn-zoom-reset" class="btn btn-sm" title="Ver el mundo entero">⤢</button>
           <button id="btn-zoom-home" class="btn btn-sm" title="Ir a mi país">★</button>
-          <button id="btn-gfx" class="btn btn-sm" title="Gráficos ligeros (para móviles lentos)">⚡</button>
-          <button id="btn-tutorial" class="btn btn-sm" title="Ver el tutorial">❓</button>
         </div>
 
         <div id="proposals" class="proposals"></div>

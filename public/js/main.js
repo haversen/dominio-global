@@ -815,7 +815,8 @@ $('#overlay-btn').addEventListener('click', () => location.reload());
 
 function renderMute() {
   for (const btn of document.querySelectorAll('.btn-mute')) {
-    btn.textContent = isMuted() ? '🔇' : '🔊';
+    const full = btn.classList.contains('menu-option');
+    btn.textContent = isMuted() ? `🔇${full ? ' Sonido apagado' : ''}` : `🔊${full ? ' Sonido activado' : ''}`;
     btn.title = isMuted() ? 'Activar el sonido' : 'Silenciar';
   }
 }

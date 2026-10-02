@@ -15,6 +15,7 @@ import {
   WORLD_EVENTS, UN_RESOLUTIONS, MISSIONS, SPACE_STAGES, fill as fillText,
 } from '/shared/world.js';
 import { REGIONS, eraOf } from '/shared/scenarios.js';
+import { LOAN_MIN, LOAN_MAX, LOAN_MAX_INTEREST, LOAN_TERMS, LOAN_MAX_OPEN, owedFor } from '/shared/loans.js';
 import { sameTeam, TEAM_ICONS } from '/shared/teams.js';
 import { weaponAllowed, spaceAllowed } from '/shared/eras.js';
 import {
@@ -250,6 +251,12 @@ export class DiplomacyView {
     const count = $('#diplo-count');
     count.textContent = incoming;
     count.classList.toggle('hidden', incoming === 0);
+
+    // El botón ☰ Menú avisa de lo que espera respuesta: propuestas, mensajes, votaciones y ofertas.
+    const attention = incoming + pendingVote + offers;
+    const menuCount = $('#menu-count');
+    menuCount.textContent = attention;
+    menuCount.classList.toggle('hidden', attention === 0);
 
     // Cuántas ramas están investigando ahora mismo (y lo que le falta a la más próxima).
     const active = Object.values(self.research ?? {});
@@ -591,7 +598,111 @@ export class DiplomacyView {
         h('h4', { class: 'panel-sub' }, 'Ofertas entre jugadores'),
         this.#offerList(ctx, active),
         active && this.#offerForm(ctx)),
+      h('section', { class: 'modal-section' },
+        h('h4', { class: 'panel-sub' }, '🏦 Préstamos'),
+        h('p', { class: 'muted small' }, 'Pide dinero a los demás jugadores eligiendo tú el interés y el plazo. Cuanto más interés ofrezcas, más fácil que alguien (o un bot) te lo preste. Al vencer se cobra solo; si no tienes suficiente, lo que falte sube un 10 %.'),
+        this.#loanList(ctx, active),
+        active && this.#loanForm(ctx)),
     ];
+  }
+
+  #loanList({ game, me, self, players }, active) {
+    const now = this.serverNow();
+    const name = (id) => players.get(id)?.name ?? 'Jugador retirado';
+    const money = RESOURCE_INFO.money.icon;
+    const loans = game.loans ?? [];
+    const rows = [];
+    for (const l of loans.filter((x) => x.status === 'active' && x.borrower === me)) {
+      rows.push(h('div', { class: `loan-row debt${l.late ? ' late' : ''}` },
+        h('span', {}, `${l.late ? '⚠️' : '📉'} Debes ${l.owed} ${money} a ${name(l.lender)}`,
+          h('small', { class: 'muted' }, l.late ? ` · retrasado, se cobra en ${clock(l.dueAt - now)}` : ` · vence en ${clock(l.dueAt - now)}`)),
+        active && h('button', {
+          class: 'btn btn-xs btn-primary',
+          disabled: self.resources.money < l.owed,
+          title: self.resources.money < l.owed ? 'No tienes suficiente dinero' : '',
+          onClick: async (e) => {
+            e.currentTarget.disabled = true;
+            const res = await request('loan:repay', { loanId: l.id });
+            if (!res.ok) toast(res.error, 'error');
+            else toast('Préstamo devuelto', 'success');
+          },
+        }, 'Devolver ya')));
+    }
+    for (const l of loans.filter((x) => x.status === 'active' && x.lender === me)) {
+      rows.push(h('div', { class: 'loan-row credit' },
+        h('span', {}, `📈 ${name(l.borrower)} te debe ${l.owed} ${money}`,
+          h('small', { class: 'muted' }, ` · ${l.late ? 'retrasado' : 'vence'} en ${clock(l.dueAt - now)}`))));
+    }
+    for (const l of loans.filter((x) => x.status === 'open')) {
+      const mine = l.borrower === me;
+      const atWar = !mine && relationOf(game.relations, me, l.borrower).state === 'war';
+      const error = mine ? null : atWar ? 'Estáis en guerra' : self.resources.money < l.amount ? 'No tienes tanto dinero' : null;
+      rows.push(h('div', { class: 'loan-row open' },
+        h('span', {}, `🙋 ${mine ? 'Pides' : `${name(l.borrower)} pide`} ${l.amount} ${money} al ${l.interest} % · ${l.term} min`,
+          h('small', { class: 'muted' }, mine
+            ? ` · devolverás ${l.owed} ${money} · caduca en ${clock(l.expiresAt - now)}`
+            : ` · recibirás ${l.owed} ${money} (+${l.owed - l.amount})`)),
+        active && (mine
+          ? h('button', {
+              class: 'btn btn-ghost btn-xs',
+              onClick: async () => {
+                const res = await request('loan:cancel', { loanId: l.id });
+                if (!res.ok) toast(res.error, 'error');
+              },
+            }, 'Retirar')
+          : h('button', {
+              class: 'btn btn-xs btn-primary',
+              disabled: Boolean(error),
+              title: error ?? '',
+              onClick: async (e) => {
+                e.currentTarget.disabled = true;
+                const res = await request('loan:fund', { loanId: l.id });
+                if (!res.ok) toast(res.error, 'error');
+                else toast(`Has prestado ${l.amount} ${money} a ${name(l.borrower)}`, 'success');
+              },
+            }, error ?? 'Prestar'))));
+    }
+    return rows.length ? h('div', { class: 'loan-list' }, rows) : h('p', { class: 'muted small' }, 'No hay préstamos pedidos ni deudas pendientes.');
+  }
+
+  #loanForm({ game, me }) {
+    this.loan ??= { amount: 200, interest: 10, term: 10 };
+    const form = this.loan;
+    const money = RESOURCE_INFO.money.icon;
+    const number = (key, min, max) => {
+      const input = h('input', {
+        type: 'number', min: String(min), max: String(max), step: '1', inputmode: 'numeric', value: String(form[key]),
+        onChange: () => {
+          form[key] = Math.min(max, Math.max(min, Math.floor(Number(input.value) || min)));
+          input.blur();
+          this.render(true);
+        },
+      });
+      return input;
+    };
+    const term = h('select', {
+      onChange: () => { form.term = Number(term.value); term.blur(); this.render(true); },
+    }, LOAN_TERMS.map((t) => h('option', { value: String(t) }, `${t} min`)));
+    term.value = String(form.term);
+    const open = (game.loans ?? []).filter((l) => l.borrower === me && (l.status === 'open' || l.status === 'active')).length;
+    const error = open >= LOAN_MAX_OPEN ? `Máximo ${LOAN_MAX_OPEN} préstamos a la vez` : null;
+    return h('div', { class: 'offer-form loan-form' },
+      h('h4', { class: 'panel-sub' }, 'Pedir un préstamo'),
+      h('div', { class: 'loan-fields' },
+        h('label', { class: 'offer-side' }, h('span', { class: 'muted small' }, `Cantidad (${money})`), number('amount', LOAN_MIN, LOAN_MAX)),
+        h('label', { class: 'offer-side' }, h('span', { class: 'muted small' }, 'Interés que ofreces (%)'), number('interest', 0, LOAN_MAX_INTEREST)),
+        h('label', { class: 'offer-side' }, h('span', { class: 'muted small' }, 'Plazo para devolver'), term)),
+      h('p', { class: 'small' }, `Recibes ${form.amount} ${money} y devolverás ${owedFor(form.amount, form.interest)} ${money} dentro de ${form.term} min.`),
+      h('button', {
+        class: 'btn btn-primary btn-block',
+        disabled: Boolean(error),
+        onClick: async (e) => {
+          e.currentTarget.disabled = true;
+          const res = await request('loan:request', { ...form });
+          if (!res.ok) return toast(res.error, 'error');
+          toast('Préstamo pedido: los demás jugadores lo verán en el mercado', 'success');
+        },
+      }, error ?? 'Pedir préstamo'));
   }
 
   #goodCard(g, market, self) {

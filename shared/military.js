@@ -9,8 +9,8 @@ export const UNITS = {
   // Infantería
   infantry: {
     label: 'Infantería', icon: '♟', class: 'infantry', domain: 'land', tier: 1,
-    cost: { money: 8, food: 3 }, upkeep: { food: 0.3 },
-    attack: 1.3, defense: 1.8, speed: 20, trainMs: 4_000,
+    cost: { money: 10, food: 4 }, upkeep: { food: 0.4 },
+    attack: 1.2, defense: 1.4, speed: 20, trainMs: 4_000,
   },
   mech: {
     label: 'Infantería mecanizada', icon: '♞', class: 'infantry', domain: 'land', tier: 2,
@@ -73,6 +73,10 @@ export const UNITS = {
 };
 
 export const UNIT_TYPES = Object.keys(UNITS);
+
+export const MAX_RECRUIT = 500; // unidades máximas por orden de reclutamiento
+// Entrenar un lote grande tarda más: cada unidad extra añade un 25 % del tiempo de una.
+export const BATCH_TIME_STEP = 0.25;
 
 // Velocidades reales (km/h) en los mapas de otra época: a pie, a caballo y a remo.
 // El mapa de la antigua Grecia es pequeño, así que los viajes duran parecido a los del mundo actual.
@@ -231,6 +235,14 @@ export function travelMs(from, to, units, speed = 1, speedMods = {}) {
 }
 
 // mods: multiplicadores por clase de unidad (modificaciones del árbol tecnológico).
+// Un país no tiene sitio para que miles de soldados luchen a la vez: por encima de STACK_LIMIT
+// unidades, cada unidad extra cuenta la mitad. Así acumular cientos de tropas baratas rinde menos.
+export const STACK_LIMIT = 40;
+export const STACK_EXTRA = 0.5;
+export function stackFactor(count) {
+  return count <= STACK_LIMIT ? 1 : (STACK_LIMIT + (count - STACK_LIMIT) * STACK_EXTRA) / count;
+}
+
 function power(units, kind, { terrain = 'plains', supplied = {}, mods = {} } = {}) {
   let total = 0;
   for (const t of UNIT_TYPES) {
@@ -241,7 +253,7 @@ function power(units, kind, { terrain = 'plains', supplied = {}, mods = {} } = {
     if (supplied[SUPPLY[unit.class]] === false) value *= UNSUPPLIED_FACTOR;
     total += value;
   }
-  return total;
+  return total * stackFactor(totalUnits(units));
 }
 
 // Aplica una fracción de bajas a cada tipo, con redondeo aleatorio.

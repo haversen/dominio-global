@@ -7,6 +7,7 @@ import {
   checkEnd, currentStandings, COUNTRIES,
 } from './game.js';
 import { trade, postOffer, acceptOffer, cancelOffer } from './market.js';
+import { requestLoan, fundLoan, cancelLoan, repayLoan } from './loans.js';
 import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, DEFAULT_PRESIDENT } from '../shared/leaders.js';
 import { inScenario, scenarioOf, REGIONS, eraOf } from '../shared/scenarios.js';
 import { weaponLabel, weaponIcon } from '../shared/eras.js';
@@ -463,6 +464,39 @@ export class RoomManager {
     return offer;
   }
 
+  // ---------- Préstamos ----------
+
+  requestLoan(room, player, terms) {
+    this.#requirePlaying(room);
+    const { error, loan } = requestLoan(room.game, player.id, terms);
+    if (error) throw new GameError('INVALID_ACTION', error);
+    this.#system(room, `🏦 ${player.name} pide un préstamo de ${loan.amount} 💰 al ${loan.interest} % (a devolver en ${loan.term} min)`);
+    return loan;
+  }
+
+  fundLoan(room, player, loanId) {
+    this.#requirePlaying(room);
+    const { error, loan } = fundLoan(room.game, player.id, loanId);
+    if (error) throw new GameError('INVALID_ACTION', error);
+    const borrower = room.players.get(loan.borrower);
+    this.#system(room, `🏦 ${player.name} presta ${loan.amount} 💰 a ${borrower?.name}: devolverá ${loan.owed} 💰`);
+    this.#notify(room, loan.borrower, '🏦 Préstamo concedido', `${player.name} te presta ${loan.amount} 💰. Devolverás ${loan.owed} 💰.`, 'loan');
+    return loan;
+  }
+
+  cancelLoan(room, player, loanId) {
+    this.#requirePlaying(room);
+    const { error } = cancelLoan(room.game, player.id, loanId);
+    if (error) throw new GameError('INVALID_ACTION', error);
+  }
+
+  repayLoan(room, player, loanId) {
+    this.#requirePlaying(room);
+    const { error, loan } = repayLoan(room.game, player.id, loanId);
+    if (error) throw new GameError('INVALID_ACTION', error);
+    this.#system(room, `🏦 ${player.name} devuelve su préstamo a ${room.players.get(loan.lender)?.name}`);
+  }
+
   cancelOffer(room, player, offerId) {
     this.#requirePlaying(room);
     const { error } = cancelOffer(room.game, player.id, offerId);
@@ -905,6 +939,18 @@ export class RoomManager {
     }
     if (event.type === 'pact-ended') {
       this.#system(room, `📜 Termina el pacto de no agresión entre ${name(event.players[0])} y ${name(event.players[1])}`);
+      return;
+    }
+    if (event.type === 'loan-repaid' || event.type === 'loan-late') {
+      const { loan, paid } = event;
+      const who = name(loan.borrower);
+      const to = name(loan.lender);
+      if (event.type === 'loan-repaid') {
+        this.#system(room, `🏦 ${who} ha devuelto su préstamo a ${to}`);
+      } else {
+        this.#system(room, `⚠️ ${who} no ha podido pagar a tiempo a ${to} (pagó ${paid} 💰): ahora debe ${loan.owed} 💰`);
+        this.#notify(room, loan.borrower, '⚠️ Deuda sin pagar', `Debes ${loan.owed} 💰 a ${to}. Se volverá a cobrar en un minuto.`, 'loan');
+      }
       return;
     }
     if (event.type === 'reinforce') {
