@@ -140,3 +140,15 @@ test('las salas de espera de jugadores con cuenta también sobreviven a un reini
   assert.equal(ref.room.game, null);
   assert.equal(ref.player.persistent, true);
 });
+
+test('🏠 Menú: un invitado vuelve al menú sin abandonar y puede regresar a su partida', async () => {
+  const guest = await client();
+  const created = await req(guest, 'room:create', { name: 'Invitada' });
+  await req(guest, 'room:start');
+  assert.equal((await req(guest, 'room:detach')).ok, true);
+  const peek = await req(guest, 'session:peek');
+  assert.equal(peek.game.code, created.room.code, 'el menú ofrece volver a la partida');
+  const back = await req(guest, 'session:resume');
+  assert.equal(back.restored, true);
+  assert.equal(back.you, created.you, 'sigue siendo el mismo jugador');
+});

@@ -85,6 +85,12 @@
         </form>
       </section>
 
+      <section id="guest-game" class="panel my-games hidden">
+        <div class="panel-head"><h3>Tu partida en curso</h3></div>
+        <div id="guest-game-card" class="games-list"></div>
+        <p class="muted small">Si creas o te unes a otra partida como invitado, abandonarás esta. Con una cuenta puedes tener varias a la vez.</p>
+      </section>
+
       <section id="my-games" class="panel my-games hidden">
         <div class="panel-head">
           <h3>Mis partidas</h3>
@@ -111,8 +117,8 @@
         <button id="btn-copy-link" class="btn btn-sm">Copiar invitación</button>
       </div>
       <button class="btn btn-ghost btn-sm btn-mute" title="Silenciar o activar el sonido">🔊</button>
-      <button class="btn btn-ghost btn-sm btn-my-games hidden" title="Volver a Mis partidas sin salir de esta">☰ Mis partidas</button>
-      <button id="btn-leave" class="btn btn-ghost btn-sm">Salir</button>
+      <button class="btn btn-ghost btn-sm btn-my-games" title="Salir al menú sin abandonar la sala">🏠 Menú</button>
+      <button id="btn-leave" class="btn btn-ghost btn-sm" title="Salir de la sala definitivamente">Abandonar</button>
     </header>
 
     <div class="lobby-grid">
@@ -192,7 +198,7 @@
       <button class="btn btn-sm topbar-btn btn-mute" title="Silenciar o activar el sonido">🔊</button>
       <span class="game-clock" title="Tiempo de partida"><span id="game-clock">00:00</span></span>
       <span class="room-tag">Sala <strong id="game-code"></strong></span>
-      <button class="btn btn-sm topbar-btn btn-my-games hidden" title="Volver a Mis partidas sin abandonar esta"><span class="btn-icon">☰</span><span class="btn-label">Partidas</span></button>
+      <button class="btn btn-sm topbar-btn btn-my-games" title="Salir al menú sin abandonar la partida"><span class="btn-icon">🏠</span><span class="btn-label">Menú</span></button>
       <button id="btn-leave-game" class="btn btn-ghost btn-sm topbar-btn" title="Abandonar la partida"><span class="btn-icon">✕</span><span class="btn-label">Abandonar</span></button>
     </header>
 

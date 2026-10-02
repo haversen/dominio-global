@@ -38,7 +38,6 @@ let worldData = null; // mapa (para elegir país en la sala)
 
 function render() {
   const { room } = state;
-  for (const btn of document.querySelectorAll('.btn-my-games')) btn.classList.toggle('hidden', !state.account);
   if (!room) {
     renderMenu();
     return showScreen('menu');
@@ -98,6 +97,7 @@ function exitToMenu(message, kind = 'info') {
   render();
   if (message) toast(message, kind);
   if (state.account) refreshGames();
+  else refreshGuestGame();
 }
 
 // ================= Menú principal =================
@@ -216,13 +216,22 @@ async function refreshGames() {
 }
 $('#btn-refresh-games').addEventListener('click', refreshGames);
 
-// Vuelve al menú sin abandonar la partida (solo con cuenta).
+// 🏠 Menú: vuelve al menú principal sin abandonar la partida.
 for (const btn of document.querySelectorAll('.btn-my-games')) {
   btn.addEventListener('click', async () => {
     const res = await request('room:detach');
     if (!res.ok) return toast(res.error, 'error');
-    exitToMenu();
+    exitToMenu('Has vuelto al menú. Tu partida sigue en marcha.');
   });
+}
+
+// Invitado: la partida a la que puede volver desde el menú.
+let guestGame = null;
+async function refreshGuestGame() {
+  if (state.account) return;
+  const res = await request('session:peek');
+  guestGame = res.ok ? res.game : null;
+  if (!state.room) renderMenu();
 }
 
 const STATE_LABEL = { lobby: '🕓 En la sala', playing: '⚔ En juego', finished: '🏁 Terminada' };
@@ -233,7 +242,11 @@ function renderMenu() {
   $('#account-in').classList.toggle('hidden', !logged);
   $('#guest-name').classList.toggle('hidden', logged);
   $('#my-games').classList.toggle('hidden', !logged);
-  if (!logged) return;
+  $('#guest-game').classList.toggle('hidden', logged || !guestGame);
+  if (!logged) {
+    if (guestGame) $('#guest-game-card').replaceChildren(gameCard(guestGame, true));
+    return;
+  }
   $('#account-name').textContent = state.account.username;
   const list = $('#games-list');
   if (!state.games.length) {
@@ -243,7 +256,7 @@ function renderMenu() {
   list.replaceChildren(...state.games.map(gameCard));
 }
 
-function gameCard(g) {
+function gameCard(g, guest = false) {
   const country = g.you.country && worldData?.byId.get(g.you.country)?.name;
   let status = STATE_LABEL[g.state] ?? g.state;
   if (g.state === 'playing' && g.phase === 'picking') status = '🗺 Eligiendo países';
@@ -252,11 +265,11 @@ function gameCard(g) {
   const enter = async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
-    const res = await request('room:enter', { code: g.code });
+    const res = guest ? await request('session:resume') : await request('room:enter', { code: g.code });
     btn.disabled = false;
-    if (!res.ok) {
-      toast(res.error, 'error');
-      return refreshGames();
+    if (!res.ok || (guest && !res.restored)) {
+      toast(res.error ?? 'Esa partida ya no existe', 'error');
+      return guest ? refreshGuestGame() : refreshGames();
     }
     enterRoom(res);
   };
@@ -544,7 +557,9 @@ async function leaveRoom() {
   await request('room:leave');
   exitToMenu('Has salido de la partida');
 }
-$('#btn-leave').addEventListener('click', leaveRoom);
+$('#btn-leave').addEventListener('click', () => {
+  if (confirm('¿Abandonar la sala? Para volver al menú sin salir usa 🏠 Menú.')) leaveRoom();
+});
 $('#btn-leave-game').addEventListener('click', () => {
   if (confirm('¿Seguro que quieres abandonar la partida?')) leaveRoom();
 });

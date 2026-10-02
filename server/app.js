@@ -249,10 +249,21 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS, accounts =
       return enterRoom();
     });
 
-    // Vuelve al menú «Mis partidas» sin abandonar la partida.
+    // Vuelve al menú sin abandonar la partida (con cuenta o como invitado).
     handle('room:detach', () => {
-      exitCurrent();
+      if (socket.data.account) return exitCurrent();
+      // Se ha ido al menú a propósito: en la sala de espera conserva su plaza más tiempo.
+      const ref = rooms.getByToken(tok());
+      if (ref) ref.player.persistent = true;
+      const detached = rooms.detachSocket(tok(), socket.id);
+      if (detached) broadcastRoom(detached.room);
+      leaveSocketRoom();
     });
+
+    // Invitado en el menú: ¿sigue teniendo una partida a la que volver?
+    handle('session:peek', () => ({
+      game: socket.data.account ? null : rooms.summaryFor(device),
+    }));
 
     // Al (re)conectar, el cliente pregunta si sigue dentro de alguna partida (invitados).
     handle('session:resume', () => {
