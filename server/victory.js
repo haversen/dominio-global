@@ -4,6 +4,7 @@ import { RESOURCES } from '../shared/economy.js';
 import { totalUnits } from '../shared/military.js';
 import { TECH_TYPES, startingUnlocks } from '../shared/tech.js';
 import { scoreOf } from '../shared/score.js';
+import { usedSlots } from '../shared/buildings.js';
 
 const FREE_NODES = startingUnlocks().length;
 
@@ -30,7 +31,7 @@ export function standings(game, areaOf, totalArea) {
     if (!row) continue;
     row.countries++;
     row.area += areaOf(id);
-    row.development += c.level - 1;
+    row.development += c.level - 1 + usedSlots(c.buildings) / 2; // cada 2 niveles de edificios = 1 de desarrollo
     row.units += totalUnits(c.units);
   }
   for (const a of game.armies) if (rows[a.owner]) rows[a.owner].units += totalUnits(a.units);

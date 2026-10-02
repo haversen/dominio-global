@@ -539,9 +539,14 @@ test('red: el formato compacto de los países se decodifica sin pérdidas', () =
   recruit(game, 'a', 'ESP', 'tank', 1, T0);
   developCountry(game, 'a', 'ESP', T0);
   game.countries.FRA.level = 3;
+  game.countries.ESP.buildings = { factory: 2, bunker: 1 };
+  game.countries.ESP.constructing = { type: 'farm', toLevel: 1, readyAt: T0 + 5000 };
   const decoded = decodeCountries(JSON.parse(JSON.stringify(encodeCountries(game.countries))));
   for (const [id, c] of Object.entries(game.countries)) {
-    assert.deepEqual(decoded[id], { owner: c.owner, level: c.level, units: c.units, training: c.training, developing: c.developing }, id);
+    assert.deepEqual(decoded[id], {
+      owner: c.owner, level: c.level, units: c.units, training: c.training, developing: c.developing,
+      buildings: c.buildings, constructing: c.constructing,
+    }, id);
   }
   assert.ok(JSON.stringify(encodeCountries(game.countries)).length < JSON.stringify(game.countries).length / 3);
 });
@@ -565,7 +570,9 @@ test('árbol: las tropas avanzadas exigen investigar la rama en orden', () => {
   assert.match(recruit(game, 'a', 'ESP', 'heavytank', 1, T0), /investigar/);
   assert.match(researchNode(game, 'a', 'arm3', T0), /anterior/);
   assert.equal(researchNode(game, 'a', 'arm2', T0), null);
-  assert.match(researchNode(game, 'a', 'inf2', T0), /otra/, 'una investigación a la vez');
+  assert.match(researchNode(game, 'a', 'armA', T0), /otra/, 'una investigación a la vez en cada rama');
+  assert.equal(researchNode(game, 'a', 'inf2', T0), null, 'pero las demás ramas investigan en paralelo');
+  assert.equal(research(game, 'a', 'economy', T0), null, 'y las doctrinas también');
 
   tickGame(game, ['a', 'b'], T0 + TECH_TREE.arm2.ms);
   assert.ok(game.players.a.unlocked.includes('arm2'));

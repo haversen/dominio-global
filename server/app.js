@@ -246,6 +246,12 @@ export function createGameServer({ tickIntervalMs = TICK_INTERVAL_MS } = {}) {
       broadcastRoom(room);
     });
 
+    handle('game:build', ({ countryId, type }) => {
+      const { room, player } = current();
+      rooms.build(room, player, countryId, type);
+      broadcastRoom(room);
+    });
+
     handle('game:recruit', ({ countryId, type, count }) => {
       const { room, player } = current();
       rooms.recruit(room, player, countryId, type, count);

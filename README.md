@@ -148,9 +148,33 @@ Doce tipos de unidad en cuatro ramas. El nivel I viene de serie; los niveles II 
   - *Bolsa*: compra y venta de alimentos, petróleo e industria a cambio de dinero. El precio sube al comprar y baja al vender (0,3 % por unidad), vuelve poco a poco a su valor normal y se guarda su historial para la gráfica. Comisión del 10 %.
   - *Ofertas entre jugadores*: «doy X a cambio de Y», visibles para todos; lo ofrecido queda reservado hasta que alguien acepta, se retira o caduca (10 min). Máximo 3 por jugador; no se comercia con quien estás en guerra.
 - **Mensajes privados**: desde Diplomacia se puede hablar en privado con cada jugador; solo lo ven remitente y destinatario.
-- **Tecnología** (`shared/tech.js`), una investigación a la vez:
-  - *Árbol de investigación* (estilo War Thunder): ramas de infantería, blindados, aviación, marina y bombas, con niveles I-III que exigen el anterior.
+- **Tecnología** (`shared/tech.js`), al estilo de War Thunder: **cada rama investiga por su cuenta**, con una investigación en marcha por rama y todas a la vez (infantería, blindados, aviación, marina, bombas y doctrinas).
+  - *Árbol*: una columna por rama y rangos I-IV. Cada rama tiene sus tropas (las de rango I vienen de serie) y sus **modificaciones**, que exigen el nodo anterior:
+
+    | Rama | Modificaciones |
+    |------|----------------|
+    | Infantería | Entrenamiento de élite (+15 % ataque), Reclutamiento rápido (−30 % entrenamiento), Visión nocturna (+20 % defensa) |
+    | Blindados | Blindaje reforzado (+15 % defensa), Motores diésel (+25 % velocidad), Munición perforante (+20 % ataque) |
+    | Aviación | Radar (+50 % intercepción), Pilotos veteranos (+15 % ataque), Reabastecimiento en vuelo (+30 % velocidad) |
+    | Marina | Sonar (+15 % defensa), Desembarco anfibio (sin penalización), Torpedos guiados (+20 % ataque) |
+    | Bombas | Bombas de racimo (+10 % destrucción), Escudo antimisiles (+50 % intercepción) |
+
   - *Doctrinas*: Industrialización (+10 % producción), Doctrina militar (+10 % ataque), Fortificaciones (+10 % defensa) y Logística (+15 % velocidad, −10 % mantenimiento), con tres niveles cada una.
+
+### Construcciones (`shared/buildings.js`)
+
+En cada país propio se pueden construir edificios de nivel 1 a 3. Solo hay una obra a la vez por país y el espacio depende del desarrollo (2 niveles de edificio por nivel de desarrollo):
+
+| Edificio | Efecto por nivel |
+|----------|------------------|
+| 🏭 Fábrica | +6 industria/min |
+| 🛢️ Pozo petrolífero | +5 petróleo/min |
+| 🌾 Granja | +6 alimentos/min |
+| 🏦 Banco | +8 dinero/min |
+| 🎖️ Cuartel | tropas un 20 % más rápidas de entrenar |
+| 🛡️ Búnker | +15 % de defensa del país |
+
+Al conquistar un país, sus edificios pierden un nivel; los misiles también los dañan y una bomba nuclear los destruye.
 
 ### Antes de empezar: avatar, presidente y país
 

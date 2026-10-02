@@ -2,7 +2,7 @@ import { generateCode, normalizeCode, randomId, sanitizeName, sanitizeChat } fro
 import { defaultSettings, applySettingsPatch } from '../shared/settings.js';
 import {
   createGame, pickCountry, allPicked, finishPicking, releasePlayer, tickGame, publicGame,
-  privateGameWithStandings, developCountry, recruit, moveArmy, research, researchNode, launchStrike,
+  privateGameWithStandings, developCountry, recruit, moveArmy, research, researchNode, launchStrike, build,
   checkEnd, currentStandings, COUNTRIES,
 } from './game.js';
 import { trade, postOffer, acceptOffer, cancelOffer } from './market.js';
@@ -293,6 +293,12 @@ export class RoomManager {
   developCountry(room, player, countryId) {
     this.#requirePlaying(room);
     const error = developCountry(room.game, player.id, countryId);
+    if (error) throw new GameError('INVALID_ACTION', error);
+  }
+
+  build(room, player, countryId, type) {
+    this.#requirePlaying(room);
+    const error = build(room.game, player.id, countryId, type);
     if (error) throw new GameError('INVALID_ACTION', error);
   }
 

@@ -4,6 +4,10 @@ import { WorldMap } from './map.js';
 import { $, h, toast, guardTaps, durationText, avatarEl } from './dom.js';
 import { leaderBonus, discountCost } from '/shared/leaders.js';
 import { inScenario, scenarioOf } from '/shared/scenarios.js';
+import {
+  BUILDINGS, BUILDING_TYPES, MAX_BUILDING_LEVEL, buildingSlots, usedSlots, buildingCost, buildingMs, buildingIncome,
+  buildError,
+} from '/shared/buildings.js';
 import { request } from './net.js';
 import {
   RESOURCES, RESOURCE_INFO, MAX_LEVEL, countryIncome, developCost, canAfford,
@@ -485,9 +489,12 @@ export class GameView {
       !isMine && game.phase === 'active' && this.#attackFromSection(c, ctx),
       !isMine && game.phase === 'active' && this.#strikeSection(c, ctx, now),
       h('h4', { class: 'panel-sub' }, 'Producción por minuto'),
-      this.#resourceGrid(countryIncome(c, state.level, Boolean(homeOf))),
-      homeOf && h('p', { class: 'muted small' }, 'Incluye la bonificación de capital.'),
+      this.#resourceGrid(this.#countryProduction(c, state, Boolean(homeOf))),
+      (homeOf || usedSlots(state.buildings) > 0) && h('p', { class: 'muted small' },
+        [homeOf && 'Incluye la bonificación de capital.', usedSlots(state.buildings) > 0 && 'Incluye lo que producen sus edificios.']
+          .filter(Boolean).join(' ')),
       isMine && this.#developAction(c, state, ctx),
+      game.phase === 'active' && this.#buildingsSection(c, state, ctx, isMine, now),
       picking && this.#pickAction(c, ctx),
       h('h4', { class: 'panel-sub' }, 'Países vecinos'),
       h('div', { class: 'chips' }, playableNeighbors(game, c).map((id) => this.#countryChip(world.byId.get(id), ctx))),
@@ -724,6 +731,71 @@ export class GameView {
     this.#sendTroops(from, targetId);
   }
 
+  #countryProduction(c, state, isCapital) {
+    const total = countryIncome(c, state.level, isCapital);
+    for (const [r, v] of Object.entries(buildingIncome(state.buildings))) total[r] += v;
+    return total;
+  }
+
+  // Construcciones: fábricas, pozos, granjas, bancos, cuarteles y búnkeres.
+  #buildingsSection(c, state, { self }, isMine, now) {
+    const buildings = state.buildings ?? {};
+    if (!isMine) {
+      const built = BUILDING_TYPES.filter((t) => buildings[t]);
+      if (!built.length) return null;
+      return h('div', {},
+        h('h4', { class: 'panel-sub' }, '🏗️ Construcciones'),
+        h('div', { class: 'chips' }, built.map((t) => h('span', { class: 'chip' }, `${BUILDINGS[t].icon} ${BUILDINGS[t].label} ${buildings[t]}`))));
+    }
+    const used = usedSlots(buildings);
+    const slots = buildingSlots(state.level);
+    const discount = leaderBonus(self?.president).cost;
+    const work = state.constructing;
+    return h('div', {},
+      h('h4', { class: 'panel-sub' }, `🏗️ Construcciones · espacio ${used}/${slots}`),
+      used >= slots && !work && h('p', { class: 'muted small' }, 'Sin espacio libre: desarrolla el país para poder construir más.'),
+      h('div', { class: 'build-grid' }, BUILDING_TYPES.map((t) => {
+        const b = BUILDINGS[t];
+        const level = buildings[t] ?? 0;
+        const toLevel = level + 1;
+        const building = work?.type === t;
+        let action;
+        if (building) {
+          const total = buildingMs(work.toLevel) / this.getState().room.game.speed;
+          const left = work.readyAt - now;
+          action = h('div', { class: 'progress' },
+            h('div', { class: 'progress-bar', style: { width: `${Math.min(100, (1 - left / total) * 100)}%` } }),
+            h('span', {}, `Nivel ${work.toLevel} · ${secondsText(left)}`));
+        } else if (level >= MAX_BUILDING_LEVEL) {
+          action = h('span', { class: 'tree-done' }, '✓ Nivel máximo');
+        } else {
+          const cost = discountCost(buildingCost(t, toLevel), discount);
+          const error = buildError(state, t) ?? (!self || !canAfford(self.resources, cost) ? 'No tienes recursos suficientes' : null);
+          action = h('button', {
+            class: 'btn btn-xs btn-block',
+            disabled: Boolean(error),
+            title: error ?? `Coste: ${costText(cost)}`,
+            onClick: async (e) => {
+              e.currentTarget.disabled = true;
+              const res = await request('game:build', { countryId: c.id, type: t });
+              if (!res.ok) toast(res.error, 'error');
+              else {
+                toast(`${b.icon} Construyendo ${b.label.toLowerCase()} en ${c.name}`, 'success');
+                play('click');
+              }
+            },
+          }, level ? `Mejorar a nivel ${toLevel}` : 'Construir', h('small', {}, costText(cost)));
+        }
+        return h('div', { class: `build-card${level ? ' built' : ''}${building ? ' active' : ''}` },
+          h('div', { class: 'build-head' },
+            h('span', { class: 'build-icon' }, b.icon),
+            h('strong', {}, b.label),
+            h('span', { class: 'pips' }, Array.from({ length: MAX_BUILDING_LEVEL }, (_, i) => h('i', { class: i < level ? 'on' : '' })))),
+          h('small', { class: 'muted' }, b.desc),
+          action);
+      })));
+  }
+
   #developAction(c, state, { self }) {
     if (state.level >= MAX_LEVEL) return h('p', { class: 'muted small' }, 'Desarrollo al nivel máximo.');
     if (state.developing) return null;
@@ -801,10 +873,12 @@ export class GameView {
     const troops = ctx?.game.phase === 'active' && state
       ? UNIT_TYPES.filter((t) => state.units[t]).map((t) => `${UNITS[t].icon} ${state.units[t]}`).join('   ') || 'Sin tropas'
       : null;
+    const built = BUILDING_TYPES.filter((t) => state?.buildings?.[t]).map((t) => `${BUILDINGS[t].icon}${state.buildings[t]}`).join(' ');
     return [
       h('strong', {}, c.name),
       h('span', { style: { color: owner?.color ?? picker?.color ?? '' } }, who),
       troops && h('span', { class: 'muted' }, troops),
+      built && h('span', { class: 'muted' }, built),
     ].filter(Boolean);
   }
 

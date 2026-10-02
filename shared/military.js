@@ -185,20 +185,22 @@ export function distanceKm(from, to) {
  * Duración del viaje en ms: distancia real en km dividida por la velocidad (km/h) de la unidad
  * más lenta, como en la vida real. `speed` acelera el reloj (ritmo de tropas × velocidad de juego).
  */
-export function travelMs(from, to, units, speed = 1) {
+export function travelMs(from, to, units, speed = 1, speedMods = {}) {
   const present = UNIT_TYPES.filter((t) => (units[t] ?? 0) > 0);
-  const slowest = present.length ? Math.min(...present.map((t) => UNITS[t].speed)) : UNITS.infantry.speed;
+  const kmh = (t) => UNITS[t].speed * (speedMods[UNITS[t].class] ?? 1);
+  const slowest = present.length ? Math.min(...present.map(kmh)) : UNITS.infantry.speed;
   let hours = distanceKm(from, to) / slowest;
   if (from.sea.includes(to.id)) hours *= 1.3; // embarcar y desembarcar
   return Math.max(MIN_TRAVEL_MS, Math.round((hours * 3_600_000) / speed));
 }
 
-function power(units, kind, { terrain = 'plains', supplied = {} } = {}) {
+// mods: multiplicadores por clase de unidad (modificaciones del árbol tecnológico).
+function power(units, kind, { terrain = 'plains', supplied = {}, mods = {} } = {}) {
   let total = 0;
   for (const t of UNIT_TYPES) {
     if (!units[t]) continue;
     const unit = UNITS[t];
-    let value = unit[kind] * units[t];
+    let value = unit[kind] * units[t] * (mods[unit.class] ?? 1);
     if (kind === 'attack') value *= TERRAIN_INFO[terrain].attack[unit.class] ?? 1;
     if (supplied[SUPPLY[unit.class]] === false) value *= UNSUPPLIED_FACTOR;
     total += value;
@@ -220,7 +222,8 @@ function applyLosses(units, fraction, rng) {
 
 /**
  * Resuelve una batalla.
- * ctx: { terrain, capital, level, amphibious, attackerSupply, defenderSupply, attackBonus, defenseBonus }
+ * ctx: { terrain, capital, level, amphibious, attackerSupply, defenderSupply, attackBonus, defenseBonus,
+ *        attackerMods, defenderMods }  (mods: multiplicadores por clase de unidad)
  * Devuelve { attackerWins, attackersLeft, defendersLeft, attackPower, defensePower }.
  */
 export function resolveBattle(attackers, defenders, ctx = {}, rng = Math.random) {
@@ -229,11 +232,11 @@ export function resolveBattle(attackers, defenders, ctx = {}, rng = Math.random)
   const terrain = ctx.terrain ?? 'plains';
   const luck = () => 0.8 + rng() * 0.4;
 
-  let attackPower = power(attackers, 'attack', { terrain, supplied: ctx.attackerSupply }) * luck();
+  let attackPower = power(attackers, 'attack', { terrain, supplied: ctx.attackerSupply, mods: ctx.attackerMods }) * luck();
   if (ctx.amphibious) attackPower *= AMPHIBIOUS_ATTACK;
   attackPower *= ctx.attackBonus ?? 1; // tecnología
 
-  let defensePower = power(defenders, 'defense', { supplied: ctx.defenderSupply }) * luck();
+  let defensePower = power(defenders, 'defense', { supplied: ctx.defenderSupply, mods: ctx.defenderMods }) * luck();
   defensePower *= ctx.defenseBonus ?? 1;
   defensePower *= TERRAIN_INFO[terrain].defense;
   defensePower *= 1 + LEVEL_DEFENSE * ((ctx.level ?? 1) - 1);
@@ -281,13 +284,14 @@ export const WEAPONS = {
 };
 export const WEAPON_TYPES = Object.keys(WEAPONS);
 
-/** Probabilidad de que las defensas aéreas del objetivo derriben el arma. */
-export function interceptChance(defenders, weapon) {
+/** Probabilidad de que las defensas aéreas del objetivo derriben el arma (boost: radar, escudo). */
+export function interceptChance(defenders, weapon, boost = 1) {
   const shield = UNIT_TYPES.reduce((s, t) => s + (UNITS[t].interceptor ?? 0) * (defenders?.[t] ?? 0), 0);
-  return Math.min(0.75, shield * 0.06) * WEAPONS[weapon].interceptable;
+  return Math.min(0.9, Math.min(0.75, shield * 0.06) * boost) * WEAPONS[weapon].interceptable;
 }
 
 /** Daños de un impacto: unidades que sobreviven y niveles de desarrollo perdidos. */
-export function strikeDamage(units, weapon, rng = Math.random) {
-  return { unitsLeft: applyLosses(normalizeUnits(units), WEAPONS[weapon].kill, rng), levelsLost: WEAPONS[weapon].levels };
+export function strikeDamage(units, weapon, rng = Math.random, extraKill = 0) {
+  const kill = Math.min(0.95, WEAPONS[weapon].kill + extraKill);
+  return { unitsLeft: applyLosses(normalizeUnits(units), kill, rng), levelsLost: WEAPONS[weapon].levels };
 }

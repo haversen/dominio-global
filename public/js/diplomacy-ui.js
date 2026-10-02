@@ -6,6 +6,7 @@ import { request, socket } from './net.js';
 import { RELATIONS, PROPOSALS, relationOf, declareWarError, proposalError } from '/shared/diplomacy.js';
 import {
   TECHS, TECH_TYPES, TECH_MAX_LEVEL, techCost, techMs, TECH_TREE, TREE_NODES, TREE_BRANCHES, nodeError,
+  DOCTRINE_BRANCH, MAX_RANK,
 } from '/shared/tech.js';
 import { UNITS, WEAPONS } from '/shared/military.js';
 import { RESOURCES, RESOURCE_INFO, canAfford } from '/shared/economy.js';
@@ -23,11 +24,13 @@ const clock = (ms) => {
   return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
 };
 
-const ROMAN = ['', 'I', 'II', 'III'];
+const ROMAN = ['', 'I', 'II', 'III', 'IV'];
 
+// Lo que muestra cada nodo: la unidad o el arma que desbloquea, o la propia modificación.
 const nodeInfo = (id) => {
-  const { unit, weapon } = TECH_TREE[id].unlocks;
-  return unit ? UNITS[unit] : WEAPONS[weapon];
+  const node = TECH_TREE[id];
+  if (!node.unlocks) return { label: node.label, icon: node.icon };
+  return node.unlocks.unit ? UNITS[node.unlocks.unit] : WEAPONS[node.unlocks.weapon];
 };
 
 const offerText = (side) => `${fmt.format(side.amount)} ${RESOURCE_INFO[side.resource].icon} ${RESOURCE_INFO[side.resource].label.toLowerCase()}`;
@@ -112,6 +115,7 @@ export class DiplomacyView {
     this.tradeWith = null;
     this.dmWith = null;
     $('#modal').classList.remove('hidden');
+    $('#modal .modal-box').classList.toggle('wide', tab === 'tech');
     this.render(true);
   }
 
@@ -208,9 +212,14 @@ export class DiplomacyView {
     count.textContent = incoming;
     count.classList.toggle('hidden', incoming === 0);
 
+    // Cuántas ramas están investigando ahora mismo (y lo que le falta a la más próxima).
+    const active = Object.values(self.research ?? {});
     const progress = $('#tech-progress');
-    progress.classList.toggle('hidden', !self.research);
-    if (self.research) progress.textContent = clock(self.research.readyAt - this.serverNow());
+    progress.classList.toggle('hidden', active.length === 0);
+    if (active.length) {
+      const next = Math.min(...active.map((r) => r.readyAt)) - this.serverNow();
+      progress.textContent = active.length > 1 ? `${active.length} · ${clock(next)}` : clock(next);
+    }
 
     for (const tab of document.querySelectorAll('#modal .tab')) {
       tab.classList.toggle('active', tab.dataset.tab === this.tab);
@@ -612,49 +621,78 @@ export class DiplomacyView {
       h('p', { class: 'muted small' }, 'Lo que ofreces queda reservado hasta que alguien acepte o retires la oferta. Las ofertas caducan a los 10 minutos y se te devuelve todo.'));
   }
 
-  // ---------- Tecnología ----------
+  // ---------- Tecnología (árbol estilo War Thunder) ----------
 
   #techView({ self, game }) {
     const now = this.serverNow();
+    const busy = Object.keys(self.research ?? {}).length;
     return [
-      h('p', { class: 'muted' }, 'Investiga cada rama para desbloquear tropas y bombas más poderosas, como en un árbol de investigación. Solo se puede investigar una cosa a la vez.'),
-      h('div', { class: 'tree' }, TREE_BRANCHES.map((branch) => {
-        const nodes = TREE_NODES.filter((id) => TECH_TREE[id].branch === branch.id)
-          .sort((a, b) => TECH_TREE[a].tier - TECH_TREE[b].tier);
-        return h('div', { class: 'tree-row' },
-          h('div', { class: 'tree-branch' }, h('span', { class: 'tech-icon' }, branch.icon), h('span', {}, branch.label)),
-          nodes.flatMap((id, i) => [
-            i > 0 && h('div', { class: `tree-link${self.unlocked?.includes(id) ? ' on' : ''}` }),
-            this.#treeNode(id, self, game, now),
-          ]));
-      })),
-      h('h4', { class: 'panel-sub' }, 'Doctrinas'),
+      h('p', { class: 'muted small' },
+        `Cada rama investiga por su cuenta: puedes tener una investigación en marcha en cada columna a la vez (ahora: ${busy} de ${TREE_BRANCHES.length + 1}). `
+        + 'Las tropas de rango I vienen de serie; las modificaciones mejoran a las tropas de su rama.'),
+      h('div', { class: 'wt-tree' },
+        h('div', { class: 'wt-ranks' }, h('div', { class: 'wt-head-spacer' }),
+          Array.from({ length: MAX_RANK }, (_, i) => h('div', { class: 'wt-rank' }, `Rango ${ROMAN[i + 1]}`))),
+        TREE_BRANCHES.map((branch) => this.#branchColumn(branch, self, game, now))),
+      h('h4', { class: 'panel-sub' }, `${DOCTRINE_BRANCH.icon} Doctrinas`),
+      this.#slotStatus(self.research?.[DOCTRINE_BRANCH.id], game, now, self),
       this.#doctrines(self, game, now),
     ];
+  }
+
+  // Estado del hueco de investigación de una rama.
+  #slotStatus(r, game, now, self) {
+    if (!r) return h('div', { class: 'wt-slot free' }, '🔓 Libre: elige qué investigar');
+    const label = r.node ? nodeInfo(r.node).label : `${TECHS[r.tech].label} ${ROMAN[r.toLevel] ?? r.toLevel}`;
+    const totalMs = (r.node ? TECH_TREE[r.node].ms : techMs(r.toLevel)) * leaderBonus(self.president).researchMs / game.speed;
+    const left = r.readyAt - now;
+    return h('div', { class: 'wt-slot busy' },
+      h('div', { class: 'progress' },
+        h('div', { class: 'progress-bar', style: { width: `${Math.min(100, (1 - left / totalMs) * 100)}%` } }),
+        h('span', {}, `🔬 ${label} · ${clock(left)}`)));
+  }
+
+  #branchColumn(branch, self, game, now) {
+    const nodes = TREE_NODES.filter((id) => TECH_TREE[id].branch === branch.id);
+    const done = nodes.filter((id) => self.unlocked?.includes(id)).length;
+    return h('div', { class: 'wt-col' },
+      h('div', { class: 'wt-head' },
+        h('div', { class: 'wt-title' }, h('span', { class: 'tech-icon' }, branch.icon), h('strong', {}, branch.label),
+          h('small', { class: 'muted' }, `${done}/${nodes.length}`)),
+        this.#slotStatus(self.research?.[branch.id], game, now, self)),
+      Array.from({ length: MAX_RANK }, (_, i) => {
+        const rank = i + 1;
+        const here = nodes.filter((id) => TECH_TREE[id].rank === rank);
+        return h('div', { class: 'wt-cell' },
+          rank > 1 && h('div', { class: `wt-arrow${here.some((id) => self.unlocked?.includes(id)) ? ' on' : ''}` }),
+          here.map((id) => this.#treeNode(id, self, game, now)));
+      }));
   }
 
   #treeNode(id, self, game, now) {
     const node = TECH_TREE[id];
     const info = nodeInfo(id);
+    const isMod = !node.unlocks;
     const done = self.unlocked?.includes(id);
-    const researching = self.research?.node === id;
+    const researching = self.research?.[node.branch]?.node === id;
     const blockedBy = done ? null : nodeError(self.unlocked ?? [], id);
     let error = blockedBy;
-    if (!error && !done && self.research) error = 'Ya hay una investigación en curso';
+    if (!error && !done && self.research?.[node.branch]) error = 'Esta rama ya está investigando otra cosa';
     if (!error && !done && !canAfford(self.resources, node.cost)) error = 'No tienes recursos suficientes';
+    const ms = (node.ms ?? 0) * leaderBonus(self.president).researchMs / game.speed;
 
-    const stats = node.unlocks.unit
-      ? `⚔ ${info.attack} · 🛡 ${info.defense} · ➤ ${info.speed} km/h`
-      : `alcance ${info.range} · destruye ${Math.round(info.kill * 100)} %`;
+    let detail;
+    if (isMod) detail = node.desc;
+    else if (node.unlocks.unit) detail = `⚔ ${info.attack} · 🛡 ${info.defense} · ➤ ${info.speed} km/h`;
+    else detail = `alcance ${info.range} · destruye ${Math.round(info.kill * 100)} %`;
 
     let action;
     if (done) {
       action = h('span', { class: 'tree-done' }, node.free ? '✓ De serie' : '✓ Investigado');
     } else if (researching) {
-      const total = (node.ms * leaderBonus(self.president).researchMs) / game.speed;
-      const left = self.research.readyAt - now;
+      const left = self.research[node.branch].readyAt - now;
       action = h('div', { class: 'progress' },
-        h('div', { class: 'progress-bar', style: { width: `${Math.min(100, (1 - left / total) * 100)}%` } }),
+        h('div', { class: 'progress-bar', style: { width: `${Math.min(100, (1 - left / ms) * 100)}%` } }),
         h('span', {}, clock(left)));
     } else {
       action = h('button', {
@@ -666,22 +704,22 @@ export class DiplomacyView {
           if (!res.ok) toast(res.error, 'error');
           else toast(`Investigando: ${info.label}`);
         },
-      }, blockedBy ? '🔒 Bloqueado' : `Investigar · ${clock((node.ms * leaderBonus(self.president).researchMs) / game.speed)}`);
+      }, blockedBy ? '🔒 Bloqueado' : `Investigar · ${clock(ms)}`);
     }
 
     return h('div', {
-      class: `tree-node${done ? ' done' : ''}${researching ? ' active' : ''}${blockedBy && !done ? ' locked' : ''}`,
-      title: node.cost && !done ? `Coste: ${resourcesText(node.cost)}` : '',
+      class: `tree-node${isMod ? ' mod' : ''}${done ? ' done' : ''}${researching ? ' active' : ''}${blockedBy && !done ? ' locked' : ''}`,
+      title: error && !done ? error : '',
     },
-    h('span', { class: 'tree-tier' }, ROMAN[node.tier]),
     h('div', { class: 'tree-name' }, h('span', { class: 'tech-icon' }, info.icon), h('strong', {}, info.label)),
-    h('small', { class: 'muted' }, stats),
+    isMod && h('span', { class: 'tree-kind' }, 'Modificación'),
+    h('small', { class: 'muted' }, detail),
     !done && node.cost && h('small', { class: 'tree-cost' }, resourcesText(node.cost)),
     action);
   }
 
   #doctrines(self, game, now) {
-    const r = self.research;
+    const r = self.research?.[DOCTRINE_BRANCH.id];
     return h('div', { class: 'tech-grid' }, TECH_TYPES.map((t) => {
       const level = self.tech[t];
       const next = level + 1;
@@ -689,7 +727,7 @@ export class DiplomacyView {
       const cost = next <= TECH_MAX_LEVEL ? techCost(next) : null;
       let error = null;
       if (!cost) error = 'Nivel máximo';
-      else if (r) error = 'Ya hay una investigación en curso';
+      else if (r) error = 'Ya hay una doctrina en investigación';
       else if (!canAfford(self.resources, cost)) error = 'No tienes recursos suficientes';
 
       let progress = null;
