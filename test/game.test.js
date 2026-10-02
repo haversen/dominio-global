@@ -183,7 +183,10 @@ test('reclutar: cuesta recursos y las unidades llegan tras el entrenamiento', ()
 
 test('mover: valida vecinos, cantidades y el paso por mar', () => {
   const game = gameWithHomes({ a: 'ESP', b: 'JPN' });
-  assert.match(moveArmy(game, 'a', 'ESP', 'ITA', { infantry: 1 }, T0).error, /vecinos/);
+  // A un país lejano solo se llega por mar, con barcos y si ambos tienen costa.
+  assert.match(moveArmy(game, 'a', 'ESP', 'ITA', { infantry: 1 }, T0).error, /barco/);
+  assert.match(moveError(COUNTRIES.get('ESP'), COUNTRIES.get('AUT'), { navy: 1 }), /costa/);
+  assert.match(moveError(COUNTRIES.get('CHE'), COUNTRIES.get('ESP'), { navy: 1 }), /zarpar/);
   assert.match(moveArmy(game, 'a', 'ESP', 'FRA', { infantry: 999 }, T0).error, /tantas/);
   assert.match(moveArmy(game, 'a', 'ESP', 'FRA', {}, T0).error, /al menos/);
   assert.match(moveArmy(game, 'a', 'JPN', 'KOR', { infantry: 1 }, T0).error, /tus países/);
@@ -192,6 +195,11 @@ test('mover: valida vecinos, cantidades y el paso por mar', () => {
   assert.match(moveArmy(game, 'a', 'ESP', 'MAR', { infantry: 2 }, T0).error, /barco/);
   assert.equal(moveError(COUNTRIES.get('ESP'), COUNTRIES.get('MAR'), { infantry: 0, tank: 0, aircraft: 1, navy: 0 }), null);
   assert.match(moveError(COUNTRIES.get('DEU'), COUNTRIES.get('CHE'), { infantry: 0, tank: 0, aircraft: 0, navy: 1 }), /sin costa/);
+
+  // Una flota puede cruzar el océano: Estados Unidos puede atacar Australia.
+  assert.equal(moveError(COUNTRIES.get('USA'), COUNTRIES.get('AUS'), { infantry: 5, tank: 2, navy: 1 }), null);
+  const usAus = travelMs(COUNTRIES.get('USA'), COUNTRIES.get('AUS'), { navy: 1 }, 1) / 3_600_000;
+  assert.ok(usAus > 200 && usAus < 600, `EE. UU. → Australia en barco: ${usAus} h reales`);
 
   const { army } = moveArmy(game, 'a', 'ESP', 'MAR', { infantry: 2, navy: 1 }, T0);
   assert.ok(army.arriveAt > T0);

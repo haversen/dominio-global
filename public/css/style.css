@@ -405,22 +405,29 @@ i.res-icon, .res i.res-icon, .prod i.res-icon, .market-good i.res-icon, .trade-r
 .room-tag strong { font-family: var(--font-mono); color: var(--accent); letter-spacing: 0.15em; }
 
 .game-body { flex: 1; display: flex; min-height: 0; }
-.map-area { position: relative; flex: 1; min-width: 0; overflow: hidden; background: #050c12; }
+.map-area { position: relative; flex: 1; min-width: 0; overflow: hidden; background: #2c4a5e; }
 
 .map { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; }
 .map.dragging { cursor: grabbing; }
-.sphere { fill: url(#ocean-grad); stroke: #24536b; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.sphere { fill: url(#ocean-grad); stroke: #3c6680; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .sea-waves { fill: url(#waves); pointer-events: none; }
-.wave { fill: none; stroke: rgba(160, 210, 230, 0.07); stroke-width: 0.6; }
-.graticule { fill: none; stroke: rgba(150, 200, 220, 0.07); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
+.wave { fill: none; stroke: rgba(30, 70, 100, 0.05); stroke-width: 0.4; }
+.graticule { fill: none; stroke: rgba(30, 60, 85, 0.16); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
 /* Aguas poco profundas junto a la costa */
-.coast-halo { fill: none; stroke: rgba(110, 190, 215, 0.22); stroke-width: 7; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+.coast-halo { fill: none; stroke: rgba(190, 225, 238, 0.45); stroke-width: 5; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+.coast-halo.wide { stroke: rgba(170, 212, 230, 0.28); stroke-width: 13; }
+/* Símbolos topográficos de terreno */
+.terrain-symbols { pointer-events: none; opacity: 0.55; }
+.sym-peak { fill: none; stroke: #6b4f2e; stroke-width: 0.45; stroke-linejoin: round; }
+.sym-tree { fill: #3f5a2c; opacity: 0.55; }
+.sym-dot { fill: #9b7b47; }
+.sym-dune { fill: none; stroke: #a8854f; stroke-width: 0.35; }
 /* Relieve: textura de luces y sombras sobre toda la tierra */
-.relief { fill: url(#relief); pointer-events: none; opacity: 0.38; }
-.country.offmap { fill-opacity: 1; pointer-events: none; stroke: #0d1317; filter: saturate(0.4); }
+.relief { fill: url(#relief); pointer-events: none; opacity: 0.6; }
+.country.offmap { fill-opacity: 1; pointer-events: none; stroke: #6d6a60; filter: saturate(0.3) brightness(0.8); }
 
 .country {
-  stroke: rgba(20, 26, 18, 0.75);
+  stroke: rgba(80, 62, 40, 0.75);
   stroke-width: 0.8;
   vector-effect: non-scaling-stroke;
   stroke-linejoin: round;
@@ -434,14 +441,15 @@ i.res-icon, .res i.res-icon, .prod i.res-icon, .market-good i.res-icon, .trade-r
 .country-selected { fill: rgba(201, 162, 39, 0.12); stroke: var(--accent); stroke-width: 2.2; vector-effect: non-scaling-stroke; pointer-events: none; }
 
 .map-labels text {
-  fill: rgba(223, 230, 220, 0.8);
+  fill: #2b2116;
   font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   text-anchor: middle;
   dominant-baseline: middle;
   paint-order: stroke;
-  stroke: rgba(5, 8, 6, 0.85);
+  stroke: rgba(246, 239, 222, 0.8);
   stroke-width: 0.25em;
   stroke-linejoin: round;
   pointer-events: none;
@@ -607,6 +615,10 @@ i.res-icon, .res i.res-icon, .prod i.res-icon, .market-good i.res-icon, .trade-r
 .danger-text { color: #c7ff6b; }
 .country.target-enemy { stroke: rgba(255, 96, 90, 0.95) !important; stroke-width: 2; }
 .country.target-own { stroke: rgba(120, 220, 120, 0.95) !important; stroke-width: 2; }
+.country.target-naval { stroke: #6fd3ff !important; stroke-width: 2.4; stroke-dasharray: 6 4; animation: march 0.8s linear infinite; }
+.naval { display: grid; gap: 8px; margin-top: 10px; padding: 10px; border: 1px dashed rgba(111, 211, 255, 0.45); border-radius: var(--radius); background: rgba(111, 211, 255, 0.05); }
+.naval .panel-sub { margin: 0; }
+.naval-select { width: 100%; }
 .pips { display: inline-flex; gap: 3px; }
 .pips i { width: 10px; height: 10px; border: 1px solid var(--border-strong); border-radius: 2px; }
 .pips i.on { background: var(--accent); border-color: var(--accent); }

@@ -5,7 +5,7 @@ import {
 } from '../shared/economy.js';
 import {
   UNITS, UNIT_TYPES, GAME_SPEEDS, emptyUnits, addUnits, totalUnits, neutralGarrison, startingArmy,
-  moveError, travelMs, resolveBattle, terrainOf, WEAPONS, interceptChance, strikeDamage, paceScale,
+  moveError, travelMs, resolveBattle, terrainOf, WEAPONS, interceptChance, strikeDamage, paceScale, isNavalRoute,
 } from '../shared/military.js';
 import { SCENARIOS, DEFAULT_SCENARIO, scenarioOf, inScenario, scenarioArea } from '../shared/scenarios.js';
 import {
@@ -642,7 +642,8 @@ function arrive(game, army, now, rng) {
     terrain: terrainOf(army.to),
     capital: Boolean(defender && game.homes[defender] === army.to),
     level: target.level,
-    amphibious: COUNTRIES.get(army.from).sea.includes(army.to) && !attackerTree.amphibious,
+    amphibious: (COUNTRIES.get(army.from).sea.includes(army.to) || isNavalRoute(COUNTRIES.get(army.from), COUNTRIES.get(army.to)))
+      && !attackerTree.amphibious,
     attackerMods: attackerTree.attack,
     defenderMods: defenderTree?.defense ?? {},
     attackerSupply: supplyOf(game, army.owner),

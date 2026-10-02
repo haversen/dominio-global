@@ -13,11 +13,11 @@ import {
   RESOURCES, RESOURCE_INFO, MAX_LEVEL, countryIncome, developCost, canAfford,
 } from '/shared/economy.js';
 import {
-  UNITS, UNIT_TYPES, TERRAIN_INFO, terrainOf, totalUnits, moveError, travelMs, emptyUnits,
+  UNITS, UNIT_TYPES, TERRAIN_INFO, terrainOf, totalUnits, moveError, travelMs, emptyUnits, domainCount, isNavalRoute,
   WEAPONS, WEAPON_TYPES,
 } from '/shared/military.js';
 import { RELATIONS, relationOf } from '/shared/diplomacy.js';
-import { techBonus, isUnlocked } from '/shared/tech.js';
+import { techBonus, isUnlocked, treeBonus } from '/shared/tech.js';
 import { DiplomacyView, rankingTable } from './diplomacy-ui.js';
 import { VICTORY_REASONS } from '/shared/score.js';
 import { play } from './sound.js';
@@ -299,6 +299,8 @@ export class GameView {
         if (owner === me || rel === 'alliance') classes[n] = ['target-own'];
         else if (!rel || rel === 'war') classes[n] = ['target-enemy'];
       }
+      // Destino de la expedición naval elegida.
+      if (this.navalTarget && playable(game, this.navalTarget)) (classes[this.navalTarget] ??= []).push('target-naval');
     }
 
     const now = this.#serverNow();
@@ -310,7 +312,7 @@ export class GameView {
     this.map.setArmies([
       ...game.armies.map((a) => ({
         ...a,
-        sea: world.byId.get(a.from)?.sea.includes(a.to),
+        sea: world.byId.get(a.from)?.sea.includes(a.to) || !world.byId.get(a.from)?.neighbors.includes(a.to),
         color: players.get(a.owner)?.color ?? NEUTRAL_COLOR,
         count: totalUnits(a.units),
         mine: a.owner === me,
@@ -431,6 +433,8 @@ export class GameView {
   #renderPanel() {
     const ctx = this.#ctx();
     if (!ctx || this.panelGuard.isPressed()) return;
+    // No redibujar mientras se elige en una lista (en el móvil se cerraría).
+    if (document.activeElement?.matches?.('#country-panel select, #country-panel input')) return;
     const { game, players, me, self } = ctx;
     const panel = $('#country-panel');
     const picking = game.phase === 'picking';
@@ -639,7 +643,68 @@ export class GameView {
     return send;
   }
 
+  // Tiempo de viaje como lo calcula el servidor (ritmo, logística y modificaciones del árbol).
+  #eta(from, to, units, { game, self }) {
+    const speed = game.speed * (game.pace ?? 1800) * techBonus.speed(self?.tech);
+    return travelMs(from, to, units, speed, treeBonus(self?.unlocked).speed);
+  }
+
+  // Error de una orden de movimiento (reglas de movimiento + diplomacia).
+  #moveProblem(from, to, units, { game, me, players }) {
+    const error = moveError(from, to, units);
+    if (error) return error;
+    const ownerId = game.countries[to.id].owner;
+    const rel = ownerId && ownerId !== me ? relationOf(game.relations, me, ownerId).state : null;
+    if (rel && rel !== 'war' && rel !== 'alliance') {
+      return `${RELATIONS[rel].label} con ${players.get(ownerId)?.name}: declárale la guerra primero`;
+    }
+    return null;
+  }
+
+  // Expedición naval: con barcos se puede zarpar hacia cualquier país con costa del mapa.
+  #navalSection(c, state, chosen, ctx) {
+    const { game, players } = ctx;
+    if (!c.coastal || domainCount(state.units, 'sea') === 0) return null;
+    const options = world.countries
+      .filter((x) => x.coastal && playable(game, x.id) && isNavalRoute(c, x))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    if (!options.some((o) => o.id === this.navalTarget)) this.navalTarget = null;
+    const select = h('select', {
+      class: 'naval-select',
+      onChange: () => {
+        this.navalTarget = select.value || null;
+        select.blur();
+        this.#renderPanel();
+        this.#renderMap(this.#ctx());
+      },
+    },
+    h('option', { value: '' }, '— Elige un destino al otro lado del mar —'),
+    options.map((x) => {
+      const owner = players.get(game.countries[x.id].owner);
+      return h('option', { value: x.id }, `${x.name}${owner ? ` · ${owner.name}` : ''}`);
+    }));
+    select.value = this.navalTarget ?? '';
+
+    let action = null;
+    if (this.navalTarget) {
+      const target = world.byId.get(this.navalTarget);
+      const error = this.#moveProblem(c, target, chosen, ctx);
+      const own = game.countries[target.id].owner === ctx.me;
+      action = h('button', {
+        class: `btn btn-block ${error ? '' : 'btn-primary'}`,
+        disabled: Boolean(error),
+        onClick: () => this.#sendTroops(c.id, target.id),
+      }, error ? `✕ ${error}` : `🚢 ${own ? 'Navegar' : 'Desembarcar'} en ${target.name} · ${secondsText(this.#eta(c, target, chosen, ctx))}`);
+    }
+    return h('div', { class: 'naval' },
+      h('h4', { class: 'panel-sub' }, '🚢 Expedición naval'),
+      h('p', { class: 'muted small' }, 'Con al menos un barco en la expedición puedes llegar a cualquier país con costa del mundo, llevando también tropas y aviones. El desembarco cuenta como ataque anfibio.'),
+      select,
+      action);
+  }
+
   #sendSection(c, state, { game, me, self, players }) {
+    const ctxOf = { game, me, self, players };
     const available = state.units;
     if (totalUnits(available) === 0) {
       return h('p', { class: 'muted small' }, 'No hay tropas aquí para enviar.');
@@ -674,8 +739,7 @@ export class GameView {
         if (!error && rel && rel !== 'war' && rel !== 'alliance') {
           error = `${RELATIONS[rel].label} con ${players.get(ownerId)?.name}: declárale la guerra primero`;
         }
-        const speed = game.speed * (game.pace ?? 1800) * techBonus.speed(self?.tech);
-        const eta = error ? '' : secondsText(travelMs(c, target, chosen, speed));
+        const eta = error ? '' : secondsText(this.#eta(c, target, chosen, ctxOf));
         const defenders = totalUnits(game.countries[id].units);
         let detail = `${defenders} def. · ${eta}`;
         if (own) detail = `${rel === 'alliance' ? 'aliado' : 'refuerzo'} · ${eta}`;
@@ -689,19 +753,37 @@ export class GameView {
         h('span', {}, `${own ? '➜' : '⚔'} ${target.name}`),
         h('small', {}, detail));
       })),
-      h('p', { class: 'muted small hint-desktop' }, 'Atajo: clic derecho sobre un país vecino en el mapa.'));
+      this.#navalSection(c, state, chosen, ctxOf),
+      h('p', { class: 'muted small hint-desktop' }, 'Atajo: clic derecho sobre un país en el mapa para enviar las tropas elegidas.'));
   }
 
   // En un país ajeno: desde qué países tuyos puedes atacarlo.
-  #attackFromSection(c, { game, me }) {
+  #attackFromSection(c, ctx) {
+    const { game, me } = ctx;
     const mine = playableNeighbors(game, c).filter((id) => game.countries[id].owner === me);
-    if (!mine.length) return null;
+    // Puertos propios con barcos desde los que se puede llegar por mar.
+    const ports = c.coastal ? world.countries.filter((x) => x.coastal && isNavalRoute(x, c)
+      && game.countries[x.id]?.owner === me && domainCount(game.countries[x.id].units, 'sea') > 0) : [];
+    if (!mine.length && !ports.length) return null;
     return h('div', {},
-      h('h4', { class: 'panel-sub' }, 'Atacar desde'),
-      h('div', { class: 'chips' }, mine.map((id) => h('button', {
+      mine.length > 0 && h('h4', { class: 'panel-sub' }, 'Atacar desde'),
+      mine.length > 0 && h('div', { class: 'chips' }, mine.map((id) => h('button', {
         class: 'chip',
         onClick: () => this.#focus(id),
-      }, `${world.byId.get(id).name} · ${totalUnits(game.countries[id].units)}`))));
+      }, `${world.byId.get(id).name} · ${totalUnits(game.countries[id].units)}`))),
+      ports.length > 0 && h('h4', { class: 'panel-sub' }, '🚢 Atacar por mar desde'),
+      ports.length > 0 && h('div', { class: 'chips' }, ports.map((x) => {
+        const units = game.countries[x.id].units;
+        return h('button', {
+          class: 'chip',
+          title: 'Abre ese país con este destino ya elegido',
+          onClick: () => {
+            this.navalTarget = c.id;
+            this.sendUnits = null;
+            this.#focus(x.id);
+          },
+        }, `${x.name} · ${domainCount(units, 'sea')} 🚢 · ${secondsText(this.#eta(x, c, units, ctx))}`);
+      })));
   }
 
   async #sendTroops(from, to) {
@@ -723,11 +805,12 @@ export class GameView {
       toast('Selecciona primero uno de tus países');
       return;
     }
-    if (!world.byId.get(from).neighbors.includes(targetId)) {
-      toast('Solo puedes enviar tropas a países vecinos', 'error');
+    this.sendUnits ??= this.#defaultSend(ctx.game.countries[from].units);
+    const error = moveError(world.byId.get(from), world.byId.get(targetId), this.sendUnits);
+    if (error) {
+      toast(error, 'error');
       return;
     }
-    this.sendUnits ??= this.#defaultSend(ctx.game.countries[from].units);
     this.#sendTroops(from, targetId);
   }
 

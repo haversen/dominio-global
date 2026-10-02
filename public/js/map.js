@@ -10,19 +10,21 @@ const CLICK_TOLERANCE_PX = 5;
 const TAP_TOLERANCE_PX = 14;
 const LABEL_PX = 11;
 const LABEL_CHAR_PX = LABEL_PX * 0.58; // ancho aproximado de un carácter
-// Colores de terreno «de satélite» (algo apagados para que destaquen los de los jugadores).
+// Colores de mapa topográfico (estilo mapa impreso / Call of War).
 const TERRAIN_COLORS = {
-  plains: [92, 108, 62],
-  mountains: [112, 100, 80],
-  jungle: [46, 88, 44],
-  desert: [170, 144, 98],
-  frozen: [196, 206, 210],
-  taiga: [74, 90, 70],
+  plains: [205, 200, 152],
+  mountains: [190, 166, 126],
+  jungle: [140, 168, 106],
+  desert: [228, 208, 156],
+  frozen: [236, 240, 242],
+  taiga: [166, 182, 136],
 };
+// Símbolos dibujados sobre cada tipo de terreno.
+const TERRAIN_SYMBOLS = { mountains: 'mountains', jungle: 'trees', taiga: 'trees', desert: 'dunes' };
 // Países enormes cuyo terreno de juego es «helado» pero que en su mayoría son bosque boreal.
 const VISUAL_TERRAIN = { RUS: 'taiga', CAN: 'taiga' };
-const OFFMAP_FILL = '#161d22';
-const OWNER_MIX = 0.62; // cuánto color del dueño se mezcla con el terreno
+const OFFMAP_FILL = '#9a968a';
+const OWNER_MIX = 0.55; // cuánto color del dueño se mezcla con el terreno
 
 function svg(tag, attrs = {}) {
   const el = document.createElementNS(SVG_NS, tag);
@@ -44,11 +46,12 @@ function terrainShade(id) {
   if (!terrainCache.has(id)) {
     let h = 0;
     for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    const k = 0.9 + (h % 21) / 100;
-    terrainCache.set(id, TERRAIN_COLORS[VISUAL_TERRAIN[id] ?? terrainOf(id)].map((v) => v * k));
+    const k = 0.94 + (h % 13) / 100;
+    terrainCache.set(id, TERRAIN_COLORS[visualTerrain(id)].map((v) => Math.min(255, v * k)));
   }
   return terrainCache.get(id);
 }
+const visualTerrain = (id) => VISUAL_TERRAIN[id] ?? terrainOf(id);
 const neutralFill = (id) => hex(terrainShade(id));
 // País de un jugador: su color mezclado con el terreno (se sigue viendo si es desierto, selva...).
 function ownedFill(id, color) {
@@ -85,13 +88,39 @@ function reliefTexture(size = 256) {
         v += (top * (1 - sy) + bottom * sy) * weight;
       });
       const i = (y * size + x) * 4;
-      const light = v > 0.5;
-      img.data[i] = img.data[i + 1] = img.data[i + 2] = light ? 255 : 0;
-      img.data[i + 3] = Math.abs(v - 0.5) * (light ? 150 : 260);
+      // Curvas de nivel: líneas finas donde el «relieve» cruza cada altura.
+      const band = (v * 9) % 1;
+      if (band < 0.07) {
+        img.data[i] = 92; img.data[i + 1] = 70; img.data[i + 2] = 44;
+        img.data[i + 3] = 70;
+      } else {
+        // Sombreado suave entre curvas.
+        const light = v > 0.5;
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = light ? 255 : 60;
+        img.data[i + 3] = Math.abs(v - 0.5) * (light ? 90 : 120);
+      }
     }
   }
   ctx.putImageData(img, 0, 0);
   return canvas.toDataURL('image/png');
+}
+
+// Patrones de símbolos topográficos (en unidades del mapa: se ven más al acercar el zoom).
+function symbolPatterns() {
+  const make = (id, size, ...shapes) => {
+    const p = svg('pattern', { id, width: size, height: size, patternUnits: 'userSpaceOnUse' });
+    p.append(...shapes);
+    return p;
+  };
+  const peak = (x, y, s) => svg('path', { d: `M${x - s} ${y + s * 0.7}L${x} ${y - s * 0.7}L${x + s} ${y + s * 0.7}`, class: 'sym-peak' });
+  const tree = (x, y, r) => svg('circle', { cx: x, cy: y, r, class: 'sym-tree' });
+  const dot = (x, y) => svg('circle', { cx: x, cy: y, r: 0.35, class: 'sym-dot' });
+  return [
+    make('mountains', 14, peak(4, 4, 2.2), peak(11, 11, 2.6), peak(10, 3, 1.4)),
+    make('trees', 7, tree(2, 2, 0.55), tree(5.5, 5, 0.7), tree(2.5, 6, 0.45)),
+    make('dunes', 10, dot(2, 2), dot(7, 4), dot(4, 8), dot(9, 9),
+      svg('path', { d: 'M1 5.5q2 -1.2 4 0', class: 'sym-dune' })),
+  ];
 }
 
 // Tipo de icono de un ejército en marcha según sus unidades.
@@ -153,9 +182,9 @@ export class WorldMap {
     const defs = svg('defs');
     const ocean = svg('radialGradient', { id: 'ocean-grad', cx: '50%', cy: '45%', r: '75%' });
     ocean.append(
-      svg('stop', { offset: '0', 'stop-color': '#15506e' }),
-      svg('stop', { offset: '0.55', 'stop-color': '#0d324a' }),
-      svg('stop', { offset: '1', 'stop-color': '#071a28' }),
+      svg('stop', { offset: '0', 'stop-color': '#86afc6' }),
+      svg('stop', { offset: '0.6', 'stop-color': '#6d9ab5' }),
+      svg('stop', { offset: '1', 'stop-color': '#527f9c' }),
     );
     const waves = svg('pattern', { id: 'waves', width: 60, height: 24, patternUnits: 'userSpaceOnUse' });
     waves.append(svg('path', { d: 'M0 12 Q7.5 8 15 12 T30 12 T45 12 T60 12', class: 'wave' }),
@@ -168,7 +197,13 @@ export class WorldMap {
       pattern.append(svg('image', { href: relief, width: 70, height: 70, preserveAspectRatio: 'none' }));
       defs.append(pattern);
     }
+    defs.append(...symbolPatterns());
     const landD = world.countries.map((c) => c.d).join('');
+    // Un trazado por tipo de terreno para dibujar encima sus símbolos (montañas, árboles, dunas).
+    const symbolLayers = Object.entries(TERRAIN_SYMBOLS).map(([terrain, pattern]) => {
+      const d = world.countries.filter((c) => visualTerrain(c.id) === terrain).map((c) => c.d).join('');
+      return d ? svg('path', { d, class: `terrain-symbols sym-${terrain}`, fill: `url(#${pattern})` }) : null;
+    }).filter(Boolean);
 
     for (const c of world.countries) {
       const path = svg('path', { d: c.d, class: 'country', id: `c-${c.id}`, 'data-id': c.id, fill: neutralFill(c.id) });
@@ -196,9 +231,11 @@ export class WorldMap {
       svg('path', { d: world.sphere, class: 'sphere' }),
       svg('path', { d: world.sphere, class: 'sea-waves' }),
       svg('path', { d: world.graticule, class: 'graticule' }),
+      svg('path', { d: landD, class: 'coast-halo wide' }),
       svg('path', { d: landD, class: 'coast-halo' }),
       countries,
       ...(relief ? [svg('path', { d: landD, class: 'relief' })] : []),
+      ...symbolLayers,
       this.hoverPath,
       this.selectPath,
       labels,
@@ -329,7 +366,13 @@ export class WorldMap {
         continue;
       }
       const from = this.byId.get(a.from);
-      const to = this.byId.get(a.to);
+      const realTo = this.byId.get(a.to);
+      // Las flotas que cruzan medio mundo dan la vuelta por el borde del mapa (p. ej. por el Pacífico).
+      const W = this.world.width;
+      let toX = realTo.cx;
+      if (a.sea && Math.abs(realTo.cx - from.cx) > W * 0.45) toX += realTo.cx > from.cx ? -W : W;
+      const to = { cx: toX, cy: realTo.cy };
+      const shift = realTo.cx - toX; // 0 si no da la vuelta
       // Curva suave: el punto de control se separa de la línea recta según la distancia.
       const dx = to.cx - from.cx;
       const dy = to.cy - from.cy;
@@ -337,8 +380,12 @@ export class WorldMap {
       const ctrl = { x: (from.cx + to.cx) / 2 - dy * bend, y: (from.cy + to.cy) / 2 + dx * bend };
       const d = `M${from.cx} ${from.cy}Q${ctrl.x} ${ctrl.y} ${to.cx} ${to.cy}`;
       const cls = `${a.mine ? ' mine' : ''}${a.kind === 'strike' ? ' strike' : ''}`;
-      const route = svg('path', { d, class: `army-route${cls}`, stroke: a.color });
-      const trail = svg('path', { class: `army-trail${cls}`, stroke: a.color });
+      // Ruta y rastro se dibujan dos veces cuando dan la vuelta al mundo (una copia desplazada).
+      const copies = shift ? [0, shift] : [0];
+      const route = svg('g');
+      for (const x of copies) route.append(svg('path', { d, class: `army-route${cls}`, stroke: a.color, transform: `translate(${x} 0)` }));
+      const trail = svg('g');
+      for (const x of copies) trail.append(svg('path', { class: `army-trail${cls}`, stroke: a.color, transform: `translate(${x} 0)` }));
 
       const icon = armyIcon(a);
       const token = svg('g', { class: `army army-${icon.kind}${a.kind === 'strike' ? ' strike' : ''}` });
@@ -386,10 +433,13 @@ export class WorldMap {
         const { a } = el;
         const t = Math.min(1, Math.max(0, (now - a.departAt) / (a.arriveAt - a.departAt)));
         const p = point(el, t);
-        el.token.setAttribute('transform', `translate(${p.x.toFixed(2)} ${p.y.toFixed(2)})`);
+        const W = this.world.width;
+        const x = p.x < 0 ? p.x + W : p.x > W ? p.x - W : p.x; // al salir por un borde, entra por el otro
+        el.token.setAttribute('transform', `translate(${x.toFixed(2)} ${p.y.toFixed(2)})`);
         // Rastro: el tramo de ruta ya recorrido (subdivisión de la curva en t).
         const q = { x: el.from.cx + (el.ctrl.x - el.from.cx) * t, y: el.from.cy + (el.ctrl.y - el.from.cy) * t };
-        el.trail.setAttribute('d', `M${el.from.cx} ${el.from.cy}Q${q.x.toFixed(2)} ${q.y.toFixed(2)} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`);
+        const trailD = `M${el.from.cx} ${el.from.cy}Q${q.x.toFixed(2)} ${q.y.toFixed(2)} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+        for (const path of el.trail.children) path.setAttribute('d', trailD);
         // Aviones y bombas miran hacia donde van.
         if (el.icon.kind === 'air' || el.icon.kind === 'strike') {
           const ahead = point(el, Math.min(1, t + 0.02));

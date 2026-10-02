@@ -107,9 +107,13 @@ En la sala se elige el ritmo:
 - Escenarios inspirados en guerras: **Gran Guerra (1914-1918)**, **Segunda Guerra Mundial**, **Guerra del Pacífico** y **Guerra Fría**. Tienen países protagonistas (⭐) que se reparten primero, y en los tres primeros se puede empezar al lado de otro jugador.
 - Los países de fuera del mapa se ven apagados y no se pueden pisar ni bombardear. El % de dominación se mide sobre el mapa elegido (de Rusia, en Europa, solo cuenta su parte europea).
 
+### Expediciones navales
+
+Con al menos un barco en la expedición se puede zarpar desde un país con costa hacia **cualquier país con costa del mapa**, no solo a los vecinos (por ejemplo, de Estados Unidos a Australia), llevando también tropas de tierra y aviones a bordo. Viajan a la velocidad del barco más lento, las rutas por mar cuentan un 40 % más de distancia y el desembarco es un ataque anfibio (salvo con la modificación *Desembarco anfibio*). En el panel de un país propio con costa aparece **Expedición naval** con la lista de destinos; en un país ajeno, **Atacar por mar desde** muestra tus puertos con barcos. En el mapa, las flotas que cruzan medio mundo dan la vuelta por el borde (por el Pacífico).
+
 ### Aspecto del mapa
 
-Océano con profundidad y oleaje, aguas poco profundas en las costas, color de terreno real por país (llanura, montaña, selva, desierto, hielo, taiga) con una textura de relieve, y los países de cada jugador teñidos con su color. Los ejércitos avanzan por rutas curvas dejando un rastro, con el icono de su tipo (🪖 infantería, silueta de tanque, ✈️ aviación orientada hacia su destino, 🚢 por mar). Los recursos se muestran con su emoticono: 💰 dinero, 🌾 alimentos, 🛢️ petróleo y 🏭 industria.
+Mapa topográfico al estilo de los juegos de estrategia como Call of War: tierra en tonos de pergamino con curvas de nivel y sombreado de relieve, símbolos de terreno (montañas, árboles, dunas), mar azul claro con aguas poco profundas en las costas, nombres en mayúsculas oscuras y los países de cada jugador teñidos con su color. Los ejércitos avanzan por rutas curvas dejando un rastro, con el icono de su tipo (🪖 infantería, silueta de tanque, ✈️ aviación orientada hacia su destino, 🚢 por mar). Los recursos se muestran con su emoticono: 💰 dinero, 🌾 alimentos, 🛢️ petróleo y 🏭 industria.
 
 ### Economía
 

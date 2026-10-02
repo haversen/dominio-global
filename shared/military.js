@@ -147,9 +147,18 @@ export function startingArmy(country) {
  * Comprueba si un grupo de unidades puede ir de `from` a `to`.
  * Devuelve un mensaje de error o null.
  */
+/** ¿Es un viaje por mar a un país lejano (no vecino)? Lo pueden hacer las flotas. */
+export const isNavalRoute = (from, to) => from.id !== to.id && !from.neighbors.includes(to.id);
+
 export function moveError(from, to, units) {
-  if (!from.neighbors.includes(to.id)) return 'Solo puedes mover tropas a países vecinos';
   if (totalUnits(units) <= 0) return 'Elige al menos una unidad';
+  if (isNavalRoute(from, to)) {
+    // Con barcos se puede llegar a cualquier país con costa del mundo, llevando también tropas y aviones.
+    if (!from.coastal) return 'Solo puedes zarpar desde un país con costa';
+    if (!to.coastal) return 'Por mar solo se llega a países con costa';
+    if (domainCount(units, 'sea') === 0) return 'Para llegar por mar a un país lejano necesitas al menos un barco';
+    return null;
+  }
   if (domainCount(units, 'sea') > 0 && !to.coastal) return 'Los barcos no pueden entrar en un país sin costa';
   if (from.sea.includes(to.id) && domainCount(units, 'land') > 0 && domainCount(units, 'sea') === 0) {
     return 'Para cruzar el mar con tropas de tierra necesitas al menos un barco';
@@ -186,11 +195,16 @@ export function distanceKm(from, to) {
  * más lenta, como en la vida real. `speed` acelera el reloj (ritmo de tropas × velocidad de juego).
  */
 export function travelMs(from, to, units, speed = 1, speedMods = {}) {
-  const present = UNIT_TYPES.filter((t) => (units[t] ?? 0) > 0);
+  let present = UNIT_TYPES.filter((t) => (units[t] ?? 0) > 0);
+  // Por mar, las tropas de tierra y los aviones viajan a bordo: manda la velocidad de los barcos.
+  const bySea = from.sea.includes(to.id) || isNavalRoute(from, to);
+  const ships = present.filter((t) => UNITS[t].domain === 'sea');
+  if (bySea && ships.length) present = ships;
   const kmh = (t) => UNITS[t].speed * (speedMods[UNITS[t].class] ?? 1);
   const slowest = present.length ? Math.min(...present.map(kmh)) : UNITS.infantry.speed;
   let hours = distanceKm(from, to) / slowest;
   if (from.sea.includes(to.id)) hours *= 1.3; // embarcar y desembarcar
+  else if (isNavalRoute(from, to)) hours *= 1.4; // las rutas marítimas rodean continentes
   return Math.max(MIN_TRAVEL_MS, Math.round((hours * 3_600_000) / speed));
 }
 
