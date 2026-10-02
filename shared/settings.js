@@ -61,6 +61,17 @@ export const SETTINGS_SCHEMA = {
     labels: { 0: 'Ninguno' },
     default: 0,
   },
+  capitalCapture: {
+    label: 'Al tomar la capital de un jugador',
+    type: 'select',
+    options: ['empire', 'neutral', 'move'],
+    labels: {
+      empire: 'El conquistador se queda con todo su imperio',
+      neutral: 'Queda eliminado y su imperio se vuelve neutral',
+      move: 'Traslada la capital y sigue jugando',
+    },
+    default: 'empire',
+  },
   fogOfWar: {
     label: 'Niebla de guerra (solo ves cerca de tus países)',
     type: 'bool',

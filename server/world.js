@@ -8,7 +8,7 @@ import { NAP_DURATION_MS, pairKey, relationOf } from '../shared/diplomacy.js';
 import { addResources } from '../shared/economy.js';
 import { setRelation } from './diplomacy.js';
 import { eraOf } from '../shared/scenarios.js';
-import { eventSpec, weaponAllowed } from '../shared/eras.js';
+import { eventSpec, unInfo, weaponAllowed } from '../shared/eras.js';
 
 const NEWS_SIZE = 30;
 
@@ -175,7 +175,7 @@ function openSession(game, now, rng, { alivePlayers, standings }) {
 /** Voto de un jugador en la sesión abierta. */
 export function voteUN(game, playerId, vote) {
   const session = game.world?.session;
-  if (!session) return 'No hay ninguna votación abierta en la ONU';
+  if (!session) return `No hay ninguna votación abierta en ${unInfo(eraOf(game.scenario)).the}`;
   if (!game.players[playerId] || game.players[playerId].eliminated) return 'Jugador no válido';
   if (vote !== 'yes' && vote !== 'no') return 'Voto no válido';
   session.votes[playerId] = vote;
@@ -216,9 +216,10 @@ function closeSession(game, now) {
     }
   }
   const spec = UN_RESOLUTIONS[session.type];
+  const assembly = unInfo(eraOf(game.scenario));
   const news = addNews(game, {
-    ts: now, kind: 'un', icon: '🇺🇳',
-    headline: passed ? 'LA ONU APRUEBA UNA RESOLUCIÓN' : 'LA ONU RECHAZA UNA RESOLUCIÓN',
+    ts: now, kind: 'un', icon: assembly.icon,
+    headline: `${assembly.the.toUpperCase()} ${passed ? 'APRUEBA' : 'RECHAZA'} UNA RESOLUCIÓN`,
     text: `${spec.title}: ${passed ? 'aprobada' : 'rechazada'} (${yes} votos a favor, ${no} en contra).`,
     vars: { target: session.target, a: session.a, b: session.b },
   });

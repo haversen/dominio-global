@@ -29,8 +29,10 @@ export function relationOf(relations, a, b) {
 }
 
 /** ¿Qué propuestas tiene sentido hacer según la relación actual? */
-export function proposalError(type, relation, now = Date.now()) {
+export function proposalError(type, relation, now = Date.now(), { rivals = false } = {}) {
   const state = relation.state;
+  // En partidas por equipos, las alianzas son solo entre compañeros.
+  if (type === 'alliance' && rivals) return 'Sois de equipos contrarios: no podéis aliaros';
   if (type === 'peace' && state !== 'war') return 'Solo se puede proponer la paz estando en guerra';
   if (type === 'nap' && (state === 'alliance' || (state === 'nap' && relation.until > now))) {
     return 'Ya tenéis un acuerdo vigente';

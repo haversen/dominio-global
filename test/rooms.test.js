@@ -157,3 +157,49 @@ test('con bots se puede llegar a 16 jugadores en total', () => {
   assert.equal(room.players.size, 16);
   assert.equal([...room.players.values()].filter((p) => p.bot).length, 15);
 });
+
+test('una partida terminada se borra del servidor al rato, aunque quede gente mirando', async () => {
+  const { FINISHED_ROOM_TTL_MS } = await import('../server/rooms.js');
+  const { room, rm, host } = setup();
+  const { player: guest } = rm.joinRoom(tok(2), 'Invitado', room.code);
+  rm.attachSocket(tok(2), 's2');
+  rm.setReady(room, guest, true);
+  rm.start(room, host);
+  const t0 = (room.game.pickDeadline ?? Date.now()) + 1;
+  rm.tick(t0);
+  room.game.victory.lastStanding = true;
+  room.game.players[guest.id].eliminated = true;
+  rm.tick(t0 + 250);
+  assert.equal(room.state, 'finished');
+  assert.ok(room.chat.some((m) => /se borrará del servidor/.test(m.text)));
+  assert.equal(rm.serialize().length, 0, 'no se guarda');
+  assert.ok(rm.rooms.has(room.code), 'todavía se puede ver el resultado');
+  const { deleted, finished } = rm.sweep(Date.now() + FINISHED_ROOM_TTL_MS + 1000);
+  assert.deepEqual(deleted, [room.code]);
+  assert.deepEqual(finished, [room.code]);
+  assert.equal(rm.rooms.size, 0);
+  assert.equal(rm.getByToken(tok(1)), null);
+});
+
+test('marcas en el mapa: solo las ven compañeros de equipo y aliados', () => {
+  const { rm, room, host } = setup();
+  const others = ['Bea', 'Carlos'].map((n, i) => {
+    const { player } = rm.joinRoom(tok(i + 2), n, room.code);
+    rm.attachSocket(tok(i + 2), `s${i + 2}`);
+    rm.setReady(room, player, true);
+    return player;
+  });
+  rm.start(room, host);
+  rm.tick((room.game.pickDeadline ?? Date.now()) + 1);
+  const [b, c] = others;
+  assert.throws(() => rm.pingCountry(room, host, 'FRA', 'attack'), /compañeros de equipo o aliados/);
+  room.game.relations[pairKeyOf(host.id, b.id)] = { state: 'alliance' };
+  const { ping, to } = rm.pingCountry(room, host, 'FRA', 'attack');
+  assert.equal(ping.countryId, 'FRA');
+  assert.deepEqual(to.map((p) => p.id).sort(), [host.id, b.id].sort(), 'C no la ve');
+  assert.throws(() => rm.pingCountry(room, host, 'FRA', 'attack'), { code: 'RATE_LIMIT' });
+  assert.throws(() => rm.pingCountry(room, b, 'XXX', 'attack'), /desconocido/);
+  void c;
+});
+
+const pairKeyOf = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);

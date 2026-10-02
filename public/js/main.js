@@ -797,13 +797,16 @@ socket.on('room:delta', ({ seq, patch }) => {
   setRoom(applyDelta(rawRoom, patch));
 });
 socket.on('chat:message', appendChat);
+socket.on('map:ping', (ping) => gameView.onPing(ping));
 socket.on('game:self', (self) => {
   if (!state.room) return;
   state.self = self;
   gameView.render();
 });
 socket.on('room:kicked', () => exitToMenu('El anfitrión te ha expulsado de la sala', 'error'));
-socket.on('room:closed', () => exitToMenu('La sala se ha cerrado por inactividad', 'error'));
+socket.on('room:closed', (info) => (info?.reason === 'finished'
+  ? exitToMenu('La partida terminó y se ha borrado del servidor', 'info')
+  : exitToMenu('La sala se ha cerrado por inactividad', 'error')));
 socket.on('session:replaced', () => {
   $('#overlay-title').textContent = 'Sesión abierta en otra pestaña';
   $('#overlay-text').textContent = 'Esta partida se está jugando desde otra ventana. Recarga para recuperarla aquí.';

@@ -33,6 +33,10 @@ const OWNER_MIX = 0.55; // cuánto color del dueño se mezcla con el terreno
 // Por debajo de este zoom se dibujan los contornos simplificados (mucho más rápidos de pintar).
 const DETAIL_ZOOM = 2.2;
 const DETAIL_ZOOM_LOW_GFX = 6;
+// En pantallas táctiles (móviles y tabletas) se usan las fronteras sencillas hasta acercarse bastante.
+const DETAIL_ZOOM_TOUCH = 4;
+const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const MINIMAP_GESTURE_MS = 250;
 const LOW_GFX_KEY = 'dg.lowGfx';
 
 function svg(tag, attrs = {}) {
@@ -573,6 +577,25 @@ export class WorldMap {
     setTimeout(() => g.remove(), kind === 'nuke' ? 2600 : 1300);
   }
 
+  /** Marca de un compañero sobre un país: un anillo que late con un icono, durante unos segundos. */
+  ping(countryId, color, icon, durationMs = 8000) {
+    const c = this.byId.get(countryId);
+    if (!c) return;
+    const g = svg('g', { transform: `translate(${c.cx} ${c.cy})`, class: 'map-ping' });
+    const inner = svg('g', { transform: this.#markerScale() });
+    const label = svg('text', { class: 'ping-icon', y: -40 });
+    label.textContent = icon;
+    inner.append(
+      svg('circle', { r: 30, class: 'ping-ring', stroke: color }),
+      svg('circle', { r: 30, class: 'ping-ring ping-ring-late', stroke: color }),
+      svg('circle', { r: 6, class: 'ping-dot', fill: color }),
+      label,
+    );
+    g.append(inner);
+    this.fxLayer.append(g);
+    setTimeout(() => g.remove(), durationMs);
+  }
+
   #markerScale() {
     return `scale(${this.#unitsPerPx().toFixed(3)})`;
   }
@@ -635,7 +658,7 @@ export class WorldMap {
 
   // Cambia entre contornos simplificados y detallados según el zoom.
   #updateDetail(force = false) {
-    const limit = this.lowGfx ? DETAIL_ZOOM_LOW_GFX : DETAIL_ZOOM;
+    const limit = this.lowGfx ? DETAIL_ZOOM_LOW_GFX : TOUCH ? DETAIL_ZOOM_TOUCH : DETAIL_ZOOM;
     const detail = this.zoom < limit ? 'low' : 'high';
     if (detail === this.detail && !force) return;
     this.detail = detail;
@@ -707,7 +730,12 @@ export class WorldMap {
         return;
       }
       this.svgEl.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${scale.toFixed(4)})`;
-      this.#updateMinimap();
+      // El minimapa repinta todos los países: durante el gesto se actualiza solo de vez en cuando.
+      const t = performance.now();
+      if (t - (this.minimapAt ?? 0) > MINIMAP_GESTURE_MS) {
+        this.minimapAt = t;
+        this.#updateMinimap();
+      }
     });
   }
 
@@ -757,6 +785,7 @@ export class WorldMap {
     for (const m of this.markers.children) m.firstChild.setAttribute('transform', markerScale);
     const pxScale = `scale(${unitsPerPx.toFixed(3)})`;
     for (const el of this.armyEls.values()) el.inner.setAttribute('transform', pxScale);
+    for (const el of this.fxLayer.querySelectorAll('.map-ping > g')) el.setAttribute('transform', pxScale);
 
     const zoom = this.zoom;
     for (const label of this.labels) {

@@ -118,12 +118,17 @@ En la sala se elige el ritmo:
 - **🏛 Antigua Grecia (450 a. C.)**: un mapa propio con 44 polis, reinos y satrapías persas (Atenas, Esparta, Tebas, Corinto, Macedonia, Lidia…) recortados sobre la costa real del Egeo (`shared/ancient.js`, generado con `npm run build:historic`).
 - **🏯 Japón samurái (1560)**: la época Sengoku con 39 clanes y reinos japoneses (Oda, Takeda, Uesugi, Mōri, Shimazu, Tokugawa, Date, Hōjō, el shogunato Ashikaga, el reino de Ryūkyū, los ainu…), las 8 provincias de la Corea Joseon y la China Ming con los yurchen y los mongoles. Tropas de la época: ashigaru, samuráis, ninjas, caballería samurái, arqueros, arcabuceros, cañones, kobaya, sekibune y atakebune.
 - En la Antigua Grecia las tropas son de la época (`shared/eras.js`): hoplitas, falange, espartanos, caballería, carros, elefantes, arqueros, catapultas, balistas, trirremes, birremes y quinquerremes, con velocidades reales a pie, a caballo y a remo. Los materiales son dracmas, trigo, aceite y bronce; hay flechas incendiarias y fuego griego, pero no bomba nuclear ni carrera espacial.
-- **Partidas por equipos** (ajuste «Equipos»): equipos de 2, de 3 o dos bandos (Eje contra Aliados, OTAN contra Pacto de Varsovia, Liga de Delos contra Liga del Peloponeso…). Los compañeros empiezan aliados, no pueden atacarse y ganan juntos (la dominación suma los países del equipo). En «Dos bandos» cada bando recibe sus países históricos (`shared/teams.js`).
+- **Partidas por equipos** (ajuste «Equipos»): equipos de 2, de 3 o dos bandos (Eje contra Aliados, OTAN contra Pacto de Varsovia, Liga de Delos contra Liga del Peloponeso…). Los compañeros empiezan aliados, no pueden atacarse, no pueden aliarse con el equipo contrario y ganan juntos (la dominación suma los países del equipo). En «Dos bandos» cada bando recibe sus países históricos (`shared/teams.js`).
 - Enviar tropas por porcentaje (10–100 %, redondeando hacia abajo).
 - Reclutar escribiendo la cantidad (hasta 500 por orden) o con «Max» (todo lo que puedes pagar). Los lotes grandes tardan más: cada unidad extra añade un 25 % del tiempo de una.
 - Equilibrio: la infantería cuesta más y defiende menos, y por encima de 40 unidades en un mismo combate cada unidad extra cuenta la mitad (`stackFactor` en `shared/military.js`).
 - **Préstamos** (Mercado → 🏦): quien pide elige cantidad, interés y plazo; cualquier jugador o bot puede concederlo y al vencer se cobra solo (con un 10 % de recargo si no hay dinero suficiente). Ver `server/loans.js`.
-- Tomar la capital de un jugador lo elimina y **el conquistador se queda con todo su imperio** (con sus tropas; los países anexionados empiezan con estabilidad baja). Si la capital la toman las fuerzas neutrales, su imperio pasa a ser neutral.
+- Qué pasa al tomar la capital de un jugador se elige en la sala (ajuste «Al tomar la capital de un jugador»):
+  - **el conquistador se queda con todo su imperio** (por defecto; con sus tropas, y los países anexionados empiezan con estabilidad baja). Si la capital la toman las fuerzas neutrales, su imperio pasa a ser neutral;
+  - **queda eliminado y su imperio se vuelve neutral**;
+  - **traslada la capital y sigue jugando**: la nueva capital es su país más desarrollado (si no le quedan países, queda eliminado).
+- **Marcas en el mapa** (📍 en el panel del país): atacar aquí, defender aquí u ojo aquí. Solo las ven tus compañeros de equipo y aliados, con un aviso y un anillo que late sobre el país unos segundos.
+- Una partida terminada (por victoria o por tiempo) **se borra del servidor a los 10 minutos** (antes, si el anfitrión vuelve al lobby para la revancha). Nunca se guarda en el almacenamiento.
 - **☰ Menú de la partida**: Diplomacia, Mundo, Mercado, Tecnología, Clasificación, sonido, avisos, gráficos ligeros, tutorial y salir, en un solo botón.
 - La victoria científica (llegar a la Luna) solo existe en la **Guerra Fría**; en los demás mapas la Luna da puntos.
 - Los países neutrales (controlados por la IA) se pintan todos del mismo gris para distinguirlos de los jugadores.
@@ -156,7 +161,7 @@ Si una misión falla, el espía puede ser capturado y se anuncia quién lo envi�
 ### El mundo: eventos, ONU, misiones y carrera espacial (pestaña 🌐 Mundo)
 
 - **Eventos mundiales** cada pocos minutos, con su titular en **El Diario Global**: crisis del petróleo, cosecha histórica, boom económico, pandemia, huracanes, terremotos, golpes de estado, avances científicos y fiebres del oro.
-- **Naciones Unidas**: cada pocos minutos se vota una resolución (sanciones contra quien usó una bomba nuclear o contra el imperio más grande, alto el fuego entre dos jugadores en guerra, ayuda humanitaria al más débil o prohibición de las nucleares). Cada voto pesa tantos países como controla quien vota.
+- **Naciones Unidas**: cada pocos minutos se vota una resolución (sanciones contra quien usó una bomba nuclear o contra el imperio más grande, alto el fuego entre dos jugadores en guerra, ayuda humanitaria al más débil o prohibición de las nucleares). Cada voto pesa tantos países como controla quien vota. En los mapas históricos la asamblea lleva el nombre de la época: la Liga Anfictiónica en la antigua Grecia y la Corte Imperial de Kioto en el Japón samurái.
 - **Misiones secretas**: cada jugador recibe un objetivo oculto (controlar media región, construir, desarrollar, eliminar a un rival, dominar el mar, espiar, acumular dinero o reunir los tres recursos estratégicos). Cumplirlo da 250 puntos o, si se activa en la sala, la victoria.
 - **Carrera espacial** (en Tecnología): 🛰️ satélite espía (te quita la niebla de guerra), 🏗️ estación espacial (investigación un 20 % más rápida) y 🌕 llegada a la Luna (**victoria científica**).
 
@@ -181,6 +186,7 @@ El juego se puede **instalar** en la pantalla de inicio del móvil u ordenador (
 - **Envío por diferencias** (`shared/delta.js`): tras el primer estado, cada jugador solo recibe lo que ha cambiado.
 - **Compresión** gzip de los archivos (el mapa pasa de 250 KB a 80 KB) y de los mensajes grandes.
 - **Contornos simplificados** del mapa para el zoom alejado y botón ⚡ de **gráficos ligeros** (activo por defecto en dispositivos con poca memoria).
+- En pantallas táctiles se usan los contornos simplificados hasta un zoom mayor, y mientras se arrastra el mapa el minimapa solo se actualiza cada 250 ms.
 
 ### Expediciones navales
 
@@ -214,7 +220,7 @@ Doce tipos de unidad en cuatro ramas. El nivel I viene de serie; los niveles II 
 - Al llegar a un país ajeno hay batalla: fuerza de cada bando × terreno × capital (+25 %) × desarrollo × desembarco (−25 %) × suministro × azar (±20 %). Si gana el atacante, conquista el país (que pierde un nivel de desarrollo); si no, sus tropas se pierden. El ganador sufre bajas según lo igualada que estuviera la batalla.
 - Sin alimentos o sin petróleo, las unidades que dependen de ellos rinden a la mitad.
 - Los países neutrales tienen guarnición propia según su tamaño y economía.
-- **Si te conquistan la capital, quedas eliminado**: el resto de tus países pasa a ser neutral (con sus tropas como guarnición) y tus ejércitos en marcha se disuelven. También queda eliminado quien se queda sin países ni ejércitos.
+- **Si te conquistan la capital, quedas eliminado** (salvo con la regla «traslada la capital»): según el ajuste de la sala, el resto de tus países pasa al conquistador o se vuelve neutral (con sus tropas como guarnición) y tus ejércitos en marcha se disuelven. También queda eliminado quien se queda sin países ni ejércitos.
 
 ### Diplomacia, comercio y tecnología
 
@@ -362,6 +368,7 @@ Todas las acciones del cliente usan *acknowledgements*: el servidor responde `{ 
 | `game:spy`         | `{ mission, countryId }` | Misión de espionaje                |
 | `game:space`       | —                      | Siguiente etapa de la carrera espacial |
 | `un:vote`          | `{ vote }`             | Vota en la ONU (`yes` / `no`)        |
+| `map:ping`         | `{ countryId, kind }`  | Marca un país para el equipo (`attack` / `defend` / `look`) |
 | `room:create`      | `{ name, avatar? }`    | Crea sala y te hace anfitrión        |
 | `room:join`        | `{ name, code, avatar? }` | Entra en una sala por código      |
 | `room:profile`     | `{ avatar?, president?, country? }` | Tu avatar, presidente y país en la sala |

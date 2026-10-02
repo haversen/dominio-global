@@ -168,3 +168,10 @@ test('mapa samurái: clanes, Joseon y Ming, con tropas de la época', async () =
   assert.equal(UNITS.specops.label, 'Ninjas');
   applyEra(null);
 });
+
+test('la ONU tiene el nombre de su época', async () => {
+  const { unInfo } = await import('../shared/eras.js');
+  assert.equal(unInfo(null).the, 'la ONU');
+  assert.match(unInfo('greece').name, /Anfictiónica/);
+  assert.match(unInfo('sengoku').name, /Corte Imperial/);
+});

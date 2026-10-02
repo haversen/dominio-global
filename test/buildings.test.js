@@ -179,3 +179,32 @@ test('si la capital la toman las fuerzas neutrales, el imperio pasa a ser neutra
   assert.equal(g.players.b.eliminated, true);
   assert.equal(g.countries.KOR.owner, null);
 });
+
+test('ajuste de la capital: «se vuelve neutral» y «trasladar la capital»', () => {
+  const setup = (rule) => {
+    const g = createGame({ countryAssignment: 'choose', gameSpeed: 'normal', capitalCapture: rule }, players, { now: 0 });
+    pickCountry(g, 'a', 'ESP');
+    pickCountry(g, 'b', 'JPN');
+    tickGame(g, players, T0);
+    g.countries.KOR.owner = 'b';
+    g.countries.KOR.level = 3;
+    g.countries.KOR.units = { ...emptyUnits(), infantry: 7 };
+    g.countries.JPN.units = { ...emptyUnits(), infantry: 1 };
+    g.countries.CHN.owner = 'a';
+    g.countries.CHN.units = { ...emptyUnits(), infantry: 40, navy: 2 };
+    g.relations['a|b'] = { state: 'war' };
+    const { army } = moveArmy(g, 'a', 'CHN', 'JPN', { infantry: 40, navy: 2 }, T0);
+    return { g, ...tickGame(g, players, army.arriveAt, () => 0.5) };
+  };
+
+  const neutral = setup('neutral');
+  assert.equal(neutral.g.countries.JPN.owner, 'a');
+  assert.equal(neutral.g.players.b.eliminated, true);
+  assert.equal(neutral.g.countries.KOR.owner, null, 'nadie hereda: el imperio se vuelve neutral');
+
+  const move = setup('move');
+  assert.equal(move.g.countries.JPN.owner, 'a');
+  assert.equal(move.g.players.b.eliminated, false, 'sigue jugando');
+  assert.equal(move.g.homes.b, 'KOR', 'la capital pasa a su mejor país');
+  assert.equal(move.events.find((e) => e.type === 'battle').capitalMoved, 'KOR');
+});

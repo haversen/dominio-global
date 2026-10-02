@@ -8,6 +8,9 @@ import { RESOURCES, canAfford, addResources } from '../shared/economy.js';
 
 export { relationOf };
 
+/** ¿Están en equipos distintos? (solo en partidas por equipos) */
+const rivals = (game, a, b) => Boolean(game.teams?.[a] && game.teams?.[b] && game.teams[a] !== game.teams[b]);
+
 function activePlayer(game, id) {
   const p = game.players[id];
   return p && !p.eliminated ? p : null;
@@ -53,7 +56,7 @@ export function propose(game, from, to, type, payload, now = Date.now()) {
   if (!['peace', 'nap', 'alliance', 'trade'].includes(type)) return { error: 'Propuesta desconocida' };
   if (from === to || !activePlayer(game, from) || !activePlayer(game, to)) return { error: 'Jugador no válido' };
 
-  const error = proposalError(type, relationOf(game.relations, from, to), now);
+  const error = proposalError(type, relationOf(game.relations, from, to), now, { rivals: rivals(game, from, to) });
   if (error) return { error };
   if (game.proposals.some((p) => p.from === from && p.to === to && p.type === type)) {
     return { error: 'Ya tienes una propuesta igual pendiente' };
@@ -83,7 +86,7 @@ export function respond(game, playerId, proposalId, accept, now = Date.now()) {
   const { from, to, type } = proposal;
   if (!activePlayer(game, from) || !activePlayer(game, to)) return { error: 'El otro jugador ya no está' };
   // Las condiciones pueden haber cambiado desde que se hizo la propuesta.
-  const error = proposalError(type, relationOf(game.relations, from, to), now);
+  const error = proposalError(type, relationOf(game.relations, from, to), now, { rivals: rivals(game, from, to) });
   if (error) return { error };
 
   if (type === 'peace') setRelation(game, from, to, 'peace');

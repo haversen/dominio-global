@@ -563,6 +563,12 @@ export function createGameServer({
     });
 
     // Mensaje privado: llega solo al destinatario (y al remitente, para su historial).
+    handle('map:ping', ({ countryId, kind }) => {
+      const { room, player } = current();
+      const { ping, to } = rooms.pingCountry(room, player, countryId, kind);
+      for (const p of to) if (p.socketId) io.to(p.socketId).emit('map:ping', ping);
+    });
+
     handle('dm:send', ({ playerId, text }) => {
       const { room, player } = current();
       const { msg, target } = rooms.sendDirect(room, player, playerId, text);
@@ -647,12 +653,13 @@ export function createGameServer({
       }
     }
     if (tickCount % SWEEP_EVERY_TICKS !== 0) return;
-    const { changed: swept, deleted } = rooms.sweep(now);
+    const { changed: swept, deleted, finished } = rooms.sweep(now);
     for (const room of swept) broadcastRoom(room);
     for (const code of deleted) {
-      io.to(code).emit('room:closed');
+      const done = finished.includes(code);
+      io.to(code).emit('room:closed', { reason: done ? 'finished' : 'idle' });
       io.in(code).socketsLeave(code);
-      console.log(`Sala ${code} eliminada por inactividad (${rooms.rooms.size} activas)`);
+      console.log(`Sala ${code} eliminada ${done ? 'al terminar la partida' : 'por inactividad'} (${rooms.rooms.size} activas)`);
     }
   }
 

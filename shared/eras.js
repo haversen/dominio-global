@@ -33,6 +33,8 @@ export const ERAS = {
     },
     noWeapons: ['nuke'],
     noSpace: true,
+    // La asamblea de la época ocupa el lugar de la ONU.
+    un: { name: 'Liga Anfictiónica', the: 'la Anfictionía', icon: '🏛️' },
     resources: {
       money: { label: 'Dracmas', short: 'Dracm.', icon: '🪙' },
       food: { label: 'Trigo', short: 'Trigo', icon: '🌾' },
@@ -124,6 +126,7 @@ export const ERAS = {
     },
     noWeapons: ['nuke'],
     noSpace: true,
+    un: { name: 'Corte Imperial de Kioto', the: 'la Corte Imperial', icon: '⛩️' },
     resources: {
       money: { label: 'Mon', short: 'Mon', icon: '🪙' },
       food: { label: 'Arroz', short: 'Arroz', icon: '🍚' },
@@ -196,6 +199,8 @@ export const ERAS = {
 
 export const weaponAllowed = (weapon, era) => !ERAS[era]?.noWeapons?.includes(weapon);
 export const spaceAllowed = (era) => !ERAS[era]?.noSpace;
+/** La asamblea de votaciones de la época (la ONU en los mapas modernos). */
+export const unInfo = (era) => ERAS[era]?.un ?? { name: 'Naciones Unidas', the: 'la ONU', icon: '🇺🇳' };
 
 /** Nombre de una unidad o arma en una época (para los mensajes del servidor). */
 export const unitLabel = (type, era) => ERAS[era]?.units?.[type]?.label ?? UNITS[type].label;

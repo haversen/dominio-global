@@ -17,7 +17,7 @@ import {
 import { REGIONS, eraOf } from '/shared/scenarios.js';
 import { LOAN_MIN, LOAN_MAX, LOAN_MAX_INTEREST, LOAN_TERMS, LOAN_MAX_OPEN, owedFor } from '/shared/loans.js';
 import { sameTeam, TEAM_ICONS } from '/shared/teams.js';
-import { weaponAllowed, spaceAllowed } from '/shared/eras.js';
+import { weaponAllowed, spaceAllowed, unInfo } from '/shared/eras.js';
 import {
   MARKET_GOODS, MARKET_FEE, MAX_TRADE, MAX_OFFER_AMOUNT, MAX_OFFERS_PER_PLAYER, BASE_PRICES, quote,
 } from '/shared/market.js';
@@ -350,7 +350,7 @@ export class DiplomacyView {
               }, `💬 Mensaje${this.unread[p.id] ? ` (${this.unread[p.id]})` : ''}`),
               !out && !iAmOut && (sameTeam(game.teams, me, p.id)
                 ? h('span', { class: 'chip' }, '🤝 Compañero de equipo')
-                : this.#relationActions(p, rel, now))),
+                : this.#relationActions(p, rel, now, game, me))),
             pending.length > 0 && h('div', { class: 'pending' }, pending.map((x) => h('span', { class: 'chip' },
               `${PROPOSALS[x.type].label} enviada · ${clock(x.expiresAt - now)}`,
               h('button', { class: 'btn btn-ghost btn-xs', onClick: () => this.#cancel(x) }, 'Cancelar')))));
@@ -360,7 +360,7 @@ export class DiplomacyView {
     ];
   }
 
-  #relationActions(p, rel, now) {
+  #relationActions(p, rel, now, game, me) {
     const actions = [];
     const button = (label, cls, onClick, error) => h('button', {
       class: `btn btn-xs ${cls}`,
@@ -383,7 +383,8 @@ export class DiplomacyView {
 
     if (rel.state === 'war') actions.push(button('☮ Proponer paz', 'btn-primary', propose('peace')));
     if (rel.state !== 'war') {
-      if (rel.state !== 'alliance') actions.push(button('🤝 Alianza', '', propose('alliance')));
+      const rivals = Boolean(game?.teams?.[me] && game?.teams?.[p.id] && game.teams[me] !== game.teams[p.id]);
+      if (rel.state !== 'alliance') actions.push(button('🤝 Alianza', '', propose('alliance'), proposalError('alliance', rel, now, { rivals })));
       if (rel.state === 'peace') actions.push(button('📜 Pacto', '', propose('nap'), proposalError('nap', rel, now)));
       actions.push(button('⇄ Comerciar', '', () => { this.tradeWith = p.id; this.render(true); }));
       actions.push(button(rel.state === 'alliance' ? '🗡 Romper alianza' : '⚔ Declarar guerra', 'btn-danger', war, declareWarError(rel, now)));
@@ -510,6 +511,7 @@ export class DiplomacyView {
     // Votación de la ONU
     if (w?.un) {
       const s = w.session;
+      const un = unInfo(eraOf(game.scenario));
       let body;
       if (s) {
         const spec = UN_RESOLUTIONS[s.type];
@@ -518,7 +520,7 @@ export class DiplomacyView {
         const vote = (v) => async () => {
           const res = await request('un:vote', { vote: v });
           if (!res.ok) return toast(res.error, 'error');
-          toast(v === 'yes' ? '🇺🇳 Has votado a favor' : '🇺🇳 Has votado en contra', 'success');
+          toast(`${un.icon} ${v === 'yes' ? 'Has votado a favor' : 'Has votado en contra'}`, 'success');
         };
         body = h('div', { class: 'un-session' },
           h('div', { class: 'un-title' }, h('span', {}, spec.icon), h('strong', {}, fillText(spec.title, vars)),
@@ -529,11 +531,11 @@ export class DiplomacyView {
             h('button', { class: `btn ${myVote === 'yes' ? 'btn-primary' : ''}`, onClick: vote('yes') }, '👍 A favor'),
             h('button', { class: `btn ${myVote === 'no' ? 'btn-danger' : ''}`, onClick: vote('no') }, '👎 En contra')));
       } else {
-        body = h('p', { class: 'muted small' }, 'No hay ninguna votación abierta. La Asamblea se reúne cada pocos minutos: sanciones, altos el fuego, ayuda humanitaria o prohibir las nucleares.');
+        body = h('p', { class: 'muted small' }, `No hay ninguna votación abierta. ${un.name} se reúne cada pocos minutos: sanciones, altos el fuego${weaponAllowed('nuke', eraOf(game.scenario)) ? ', ayuda o prohibir las nucleares' : ' o ayuda al más débil'}.`);
       }
       const sanctioned = Object.entries(w.sanctions ?? {}).filter(([, until]) => until > now);
       sections.push(h('section', { class: 'modal-section' },
-        h('h4', { class: 'panel-sub' }, '🇺🇳 Naciones Unidas'),
+        h('h4', { class: 'panel-sub' }, `${un.icon} ${un.name}`),
         body,
         sanctioned.length > 0 && h('p', { class: 'small danger-text' }, `🚫 Sancionados: ${sanctioned.map(([id, until]) => `${name(id)} (${clock(until - now)})`).join(', ')}`),
         w.nukeBanUntil > now && h('p', { class: 'small' }, `☢️ Armas nucleares prohibidas durante ${clock(w.nukeBanUntil - now)}`)));

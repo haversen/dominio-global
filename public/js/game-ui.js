@@ -25,6 +25,19 @@ import { techBonus, isUnlocked, treeBonus } from '/shared/tech.js';
 import { DiplomacyView, rankingTable, setWorldNames } from './diplomacy-ui.js';
 import { VICTORY_REASONS } from '/shared/score.js';
 import { play } from './sound.js';
+
+// Marcas en el mapa para el equipo.
+const PINGS = {
+  attack: { icon: '⚔️', label: 'Atacar aquí', say: '¡Vamos a por {c}!' },
+  defend: { icon: '🛡️', label: 'Defender aquí', say: '¡Hay que defender {c}!' },
+  look: { icon: '👀', label: 'Ojo aquí', say: 'Atentos a {c}' },
+};
+// Qué pasa si cae una capital (según el ajuste de la sala).
+const CAPITAL_RULES = {
+  empire: { title: 'Si cae la capital, su dueño queda eliminado y el conquistador se queda con todo su imperio', mine: 'si cae, quedas eliminado', theirs: 'tómala y te quedas con todo su imperio' },
+  neutral: { title: 'Si cae la capital, su dueño queda eliminado y su imperio se vuelve neutral', mine: 'si cae, quedas eliminado', theirs: 'si cae, queda eliminado' },
+  move: { title: 'Si cae la capital, su dueño la traslada a otro de sus países', mine: 'si cae, se traslada a otro país', theirs: 'si cae, la traslada a otro país' },
+};
 import { startTutorial, maybeStartTutorial, refreshTutorialHighlight } from './tutorial.js';
 
 const NEUTRAL_COLOR = '#8d8c85';
@@ -411,6 +424,9 @@ export class GameView {
       }
       if (e.type !== 'battle') continue;
       this.map.flash(e.country, e.attackerWins ? 'conquest' : 'repelled');
+      if (e.capitalMoved && e.defender === me) {
+        toast(`🏛 Has perdido tu capital: el gobierno se traslada a ${world.byId.get(e.capitalMoved)?.name ?? '?'}`, 'error', 7000);
+      }
       const country = world.byId.get(e.country).name;
       const attacker = players.get(e.attacker)?.name ?? 'Alguien';
       if (e.attacker === me) play(e.attackerWins ? 'conquest' : 'battle');
@@ -540,8 +556,8 @@ export class GameView {
       h('h3', { class: 'country-title' }, h('span', { class: 'swatch', style: { background: swatchColor } }), c.name),
       h('p', { class: 'country-status' }, status),
       owner && owner.id !== me && game.phase === 'active' && this.#relationLine(owner, ctx),
-      homeOf && h('span', { class: 'badge badge-host', title: 'Si cae la capital, su dueño queda eliminado' },
-        homeOf.id === me ? '★ Tu capital · si cae, quedas eliminado' : `★ Capital de ${homeOf.name} · si cae, queda eliminado`),
+      homeOf && h('span', { class: 'badge badge-host', title: CAPITAL_RULES[game.capitalRule ?? 'empire'].title },
+        homeOf.id === me ? `★ Tu capital · ${CAPITAL_RULES[game.capitalRule ?? 'empire'].mine}` : `★ Capital de ${homeOf.name} · ${CAPITAL_RULES[game.capitalRule ?? 'empire'].theirs}`),
       h('dl', { class: 'stats' },
         h('dt', {}, 'Superficie'), h('dd', {}, `${fmt.format(c.area)} km²`),
         h('dt', {}, 'Terreno'), h('dd', { title: `Defensa ×${terrain.defense}` }, `${terrain.label}${c.coastal ? ' · costa' : ''}`),
@@ -560,6 +576,7 @@ export class GameView {
       !isMine && game.phase === 'active' && this.#attackFromSection(c, ctx),
       !isMine && game.phase === 'active' && this.#strikeSection(c, ctx, now),
       !isMine && game.phase === 'active' && !game.eliminated?.[me] && this.#spySection(c, ctx, now),
+      game.phase === 'active' && !game.eliminated?.[me] && this.#pingSection(c, ctx),
       h('h4', { class: 'panel-sub' }, 'Producción por minuto'),
       this.#resourceGrid(this.#countryProduction(c, state, Boolean(homeOf))),
       (homeOf || usedSlots(state.buildings) > 0) && h('p', { class: 'muted small' },
@@ -571,6 +588,36 @@ export class GameView {
       h('h4', { class: 'panel-sub' }, 'Países vecinos'),
       h('div', { class: 'chips' }, playableNeighbors(game, c).map((id) => this.#countryChip(world.byId.get(id), ctx))),
     );
+  }
+
+  // Marcar el país para los compañeros de equipo y aliados.
+  #pingSection(c, { game, me, players }) {
+    const friends = [...players.values()].filter((p) => p.id !== me && !game.eliminated?.[p.id]
+      && ((game.teams?.[me] && game.teams[me] === game.teams[p.id]) || relationOf(game.relations, me, p.id).state === 'alliance'));
+    if (!friends.length) return null;
+    const send = (kind) => async () => {
+      const res = await request('map:ping', { countryId: c.id, kind });
+      if (!res.ok) toast(res.error, 'error');
+    };
+    return h('div', {},
+      h('h4', { class: 'panel-sub' }, '📍 Marcar para tu equipo'),
+      h('div', { class: 'ping-actions' }, Object.entries(PINGS).map(([kind, p]) => h('button', {
+        class: 'btn btn-xs', onClick: send(kind),
+      }, `${p.icon} ${p.label}`))),
+      h('p', { class: 'muted small' }, `Lo ven ${friends.map((p) => p.name).join(', ')} en su mapa.`));
+  }
+
+  /** Marca de un compañero (o tuya): se ve en el mapa unos segundos. */
+  onPing(ping) {
+    if (!this.map) return;
+    const spec = PINGS[ping.kind];
+    if (!spec) return;
+    this.map.ping(ping.countryId, ping.color, spec.icon);
+    const country = world.byId.get(ping.countryId)?.name ?? '';
+    const me = this.#ctx()?.me;
+    if (ping.from === me) return toast(`📍 Has marcado ${country} para tu equipo`, 'info', 2500);
+    play('notify');
+    toast(`📍 ${ping.name}: ${spec.icon} ${spec.say.replace('{c}', country)}`, 'info', 6000);
   }
 
   #relationLine(owner, { game, me }) {

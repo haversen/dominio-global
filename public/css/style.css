@@ -1515,3 +1515,12 @@ button.menu-option:hover { border-color: var(--accent); }
 }
 .game-menu .room-tag { display: flex !important; }
 .game-menu .btn-my-games { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+
+/* Marcas de los compañeros sobre el mapa */
+.map-ping { pointer-events: none; }
+.ping-ring { fill: none; stroke-width: 4; animation: ping-pulse 1.4s ease-out infinite; transform-origin: 0 0; }
+.ping-ring-late { animation-delay: 0.7s; }
+.ping-dot { stroke: #fff; stroke-width: 1.5; }
+.ping-icon { font-size: 28px; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(0,0,0,.45); stroke-width: 3px; }
+@keyframes ping-pulse { from { transform: scale(0.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+.ping-actions { display: flex; flex-wrap: wrap; gap: 6px; }

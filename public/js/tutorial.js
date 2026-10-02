@@ -32,7 +32,7 @@ const STEPS = [
   },
   {
     title: '🤝 Diplomacia y 🌐 Mundo',
-    text: 'En ☰ Menú están 🤝 Diplomacia (alianzas y mensajes), 📈 Mercado (comercio y préstamos) y 🌐 Mundo (noticias, la ONU y tu misión secreta).',
+    text: 'En ☰ Menú están 🤝 Diplomacia (alianzas y mensajes), 📈 Mercado (comercio y préstamos) y 🌐 Mundo (noticias, votaciones y tu misión secreta).',
     target: '#btn-game-menu',
   },
   {

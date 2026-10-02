@@ -10,13 +10,13 @@ import { trade, postOffer, acceptOffer, cancelOffer } from './market.js';
 import { requestLoan, fundLoan, cancelLoan, repayLoan } from './loans.js';
 import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, DEFAULT_PRESIDENT } from '../shared/leaders.js';
 import { inScenario, scenarioOf, REGIONS, eraOf } from '../shared/scenarios.js';
-import { weaponLabel, weaponIcon } from '../shared/eras.js';
+import { weaponLabel, weaponIcon, unInfo } from '../shared/eras.js';
 import { UN_RESOLUTIONS, MISSIONS, SPACE_STAGES, fill } from '../shared/world.js';
 import { makeBot, runBots } from './bots.js';
-import { pairKey } from '../shared/diplomacy.js';
+import { pairKey, relationOf } from '../shared/diplomacy.js';
 import { VICTORY_REASONS } from '../shared/score.js';
 import { declareWar, propose, respond, cancelProposal } from './diplomacy.js';
-import { hasTeams, teamCount, teamCapacity, assignTeams, teamName } from '../shared/teams.js';
+import { hasTeams, teamCount, teamCapacity, assignTeams, teamName, sameTeam } from '../shared/teams.js';
 
 export const PLAYER_COLORS = [
   '#e4572e', '#2e86de', '#f2c14e', '#17bebb',
@@ -36,6 +36,12 @@ export const EMPTY_ROOM_TTL_MS = {
   playing: 8 * 24 * 60 * 60_000,
   finished: 60_000,
 };
+// Marcas en el mapa para el equipo: atacar, defender o vigilar un país.
+export const PING_KINDS = ['attack', 'defend', 'look'];
+const PING_COOLDOWN_MS = 1500;
+
+// Una partida terminada se borra del servidor pasado este tiempo, aunque siga gente mirando el resultado.
+export const FINISHED_ROOM_TTL_MS = 10 * 60_000;
 const CHAT_HISTORY_SIZE = 50;
 const DM_HISTORY_SIZE = 50;
 const CHAT_COOLDOWN_MS = 500;
@@ -466,6 +472,24 @@ export class RoomManager {
 
   // ---------- Préstamos ----------
 
+  // ---------- Marcas en el mapa (solo para compañeros de equipo y aliados) ----------
+
+  /** Marca un país para el equipo. Devuelve la marca y quién debe verla. */
+  pingCountry(room, player, countryId, kind) {
+    this.#requirePlaying(room);
+    const game = room.game;
+    if (game.phase !== 'active' || game.players[player.id]?.eliminated) throw new GameError('INVALID_ACTION', 'No puedes marcar ahora');
+    if (!COUNTRIES.has(countryId)) throw new GameError('INVALID', 'País desconocido');
+    if (!PING_KINDS.includes(kind)) throw new GameError('INVALID', 'Marca no válida');
+    const now = Date.now();
+    if (now - (player.lastPingAt ?? 0) < PING_COOLDOWN_MS) throw new GameError('RATE_LIMIT', 'Espera un momento antes de marcar otra vez');
+    const to = [...room.players.values()].filter((p) => p.id !== player.id && !game.players[p.id]?.eliminated
+      && (sameTeam(game.teams, player.id, p.id) || relationOf(game.relations, player.id, p.id).state === 'alliance'));
+    if (!to.length) throw new GameError('INVALID_ACTION', 'Solo puedes marcar países para tus compañeros de equipo o aliados');
+    player.lastPingAt = now;
+    return { ping: { from: player.id, name: player.name, color: player.color, countryId, kind, ts: now }, to: [player, ...to] };
+  }
+
   requestLoan(room, player, terms) {
     this.#requirePlaying(room);
     const { error, loan } = requestLoan(room.game, player.id, terms);
@@ -605,6 +629,7 @@ export class RoomManager {
     room.state = 'lobby';
     room.game = null;
     room.startedAt = null;
+    room.finishedAt = null;
     // Los bots se van con la partida; en la revancha se vuelven a crear.
     for (const p of [...room.players.values()]) {
       if (p.bot) {
@@ -645,8 +670,17 @@ export class RoomManager {
   sweep(now = Date.now()) {
     const changed = new Set();
     const deleted = [];
+    const finished = [];
 
     for (const room of [...this.rooms.values()]) {
+      // Las partidas terminadas no ocupan sitio: se borran al rato aunque quede alguien mirando.
+      if (room.state === 'finished' && now - (room.finishedAt ?? now) > FINISHED_ROOM_TTL_MS) {
+        this.#deleteRoom(room);
+        deleted.push(room.code);
+        finished.push(room.code);
+        changed.delete(room);
+        continue;
+      }
       if (room.state === 'lobby') {
         for (const p of [...room.players.values()]) {
           const grace = p.persistent ? ACCOUNT_LOBBY_GRACE_MS : LOBBY_RECONNECT_GRACE_MS;
@@ -672,7 +706,7 @@ export class RoomManager {
         changed.delete(room);
       }
     }
-    return { changed: [...changed], deleted };
+    return { changed: [...changed], deleted, finished };
   }
 
   /** Resumen de una partida para el menú «Mis partidas». */
@@ -828,12 +862,14 @@ export class RoomManager {
 
   #finish(room) {
     room.state = 'finished';
+    room.finishedAt = Date.now();
     const { winner, reason, team } = room.game.result;
     const winners = room.game.result.winners ?? (winner ? [winner] : []);
     const name = team ? teamName(room.settings, team) : room.players.get(winner)?.name;
     this.#system(room, winner
       ? `🏆 ${name} gana la partida ${VICTORY_REASONS[reason]}`
       : `☠ ${VICTORY_REASONS.defeat}`);
+    this.#system(room, `🧹 La partida se borrará del servidor en ${FINISHED_ROOM_TTL_MS / 60_000} minutos. El anfitrión puede volver al lobby antes para jugar la revancha.`);
 
     // Resultado de cada jugador para su perfil (solo cuentan los que tienen cuenta).
     const game = room.game;
@@ -875,6 +911,9 @@ export class RoomManager {
     const name = (pid) => (pid ? room.players.get(pid)?.name ?? 'Un jugador' : 'las fuerzas neutrales');
     // Avisos al móvil para quien no está mirando.
     if (event.type === 'eliminated') this.#notify(room, event.player, '☠ Has sido eliminado', event.reason === 'capital' ? `${name(event.by)} ha tomado tu capital${event.annexed ? ' y se queda con todo tu imperio' : ''}.` : 'Has perdido todos tus países.', 'eliminated');
+    if (event.type === 'battle' && event.capitalMoved) {
+      this.#notify(room, event.defender, '🏛 Has perdido tu capital', `${name(event.attacker)} la ha tomado. Tu nueva capital es ${COUNTRIES.get(event.capitalMoved).name}.`, 'capital');
+    }
     if (event.type === 'battle' && event.defender && event.attackerWins && !event.capitalTaken) {
       this.#notify(room, event.defender, `🏴 Has perdido ${COUNTRIES.get(event.country).name}`, `${name(event.attacker)} lo ha conquistado.`, `lost-${event.country}`);
     }
@@ -889,14 +928,15 @@ export class RoomManager {
       const s = event.session;
       const spec = UN_RESOLUTIONS[s.type];
       const vars = { target: name(s.target), a: name(s.a), b: name(s.b) };
-      this.#system(room, `🇺🇳 Votación en la ONU: ${fill(spec.title, vars)}. Votad en 🌐 Mundo antes de que acabe el tiempo`);
+      const un = unInfo(eraOf(room.game.scenario));
+      this.#system(room, `${un.icon} Votación en ${un.the}: ${fill(spec.title, vars)}. Votad en 🌐 Mundo antes de que acabe el tiempo`);
       for (const p of room.players.values()) {
-        this.#notify(room, p.id, '🇺🇳 Votación en la ONU', fill(spec.title, vars), 'un');
+        this.#notify(room, p.id, `${un.icon} Votación en ${un.the}`, fill(spec.title, vars), 'un');
       }
       return;
     }
     if (event.type === 'un-result') {
-      this.#system(room, `🇺🇳 ${this.#newsText(room, event.news)}`);
+      this.#system(room, `${event.news.icon} ${this.#newsText(room, event.news)}`);
       return;
     }
     if (event.type === 'space') {
@@ -977,7 +1017,7 @@ export class RoomManager {
       return;
     }
     if (event.attackerWins) {
-      this.#system(room, `⚔ ${name(event.attacker)} conquista ${country}${event.capitalTaken ? ` (capital de ${name(event.defender)})` : ''}`);
+      this.#system(room, `⚔ ${name(event.attacker)} conquista ${country}${event.capitalTaken ? ` (capital de ${name(event.defender)})` : ''}${event.capitalMoved ? `. ${name(event.defender)} traslada su capital a ${COUNTRIES.get(event.capitalMoved).name}` : ''}`);
     } else {
       this.#system(room, `🛡 ${country} resiste el ataque de ${name(event.attacker)}`);
     }

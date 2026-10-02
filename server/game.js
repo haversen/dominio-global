@@ -143,6 +143,7 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
 
   // Partida por equipos: los compañeros empiezan aliados (y no pueden romper la alianza).
   game.teamMode = settings.teams ?? 'none';
+  game.capitalRule = settings.capitalCapture ?? 'empire';
   game.teams = hasTeams(settings)
     ? Object.fromEntries(playerIds.map((id) => [id, profiles[id]?.team ?? null]))
     : null;
@@ -897,14 +898,33 @@ function arrive(game, army, now, rng) {
     if (defender && game.homes[defender] === army.to) {
       delete game.homes[defender];
       event.capitalTaken = true;
-      // Perder la capital elimina al jugador (se comprueba justo después de las llegadas).
-      (game.fallen ??= {})[defender] = army.owner;
+      const refuge = game.capitalRule === 'move' ? newCapital(game, defender) : null;
+      if (refuge) {
+        // Con la regla «trasladar la capital», el gobierno huye a su país más fuerte y sigue luchando.
+        game.homes[defender] = refuge;
+        event.capitalMoved = refuge;
+      } else {
+        // Perder la capital elimina al jugador (se comprueba justo después de las llegadas).
+        (game.fallen ??= {})[defender] = army.owner;
+      }
     }
   } else {
     target.units = result.defendersLeft;
   }
   pushEvent(game, event);
   return event;
+}
+
+/** Nueva capital tras perder la anterior: el país más desarrollado, y si empatan, el mejor defendido. */
+function newCapital(game, playerId) {
+  let best = null;
+  let bestScore = -1;
+  for (const [id, c] of Object.entries(game.countries)) {
+    if (c.owner !== playerId) continue;
+    const score = c.level * 1000 + totalUnits(c.units);
+    if (score > bestScore) [best, bestScore] = [id, score];
+  }
+  return best;
 }
 
 /**
@@ -926,7 +946,8 @@ function checkEliminations(game, now) {
     // Quien toma la capital se queda con todo el imperio (y con las tropas que hay dentro).
     // Si la tomaron las fuerzas neutrales, o el conquistador ya no sigue en pie, todo pasa a ser neutral.
     const by = lostCapital ? game.fallen?.[pid] ?? null : null;
-    const heir = by && game.players[by] && !game.players[by].eliminated ? by : null;
+    // Con la regla «el imperio se vuelve neutral», nadie hereda nada.
+    const heir = game.capitalRule !== 'neutral' && by && game.players[by] && !game.players[by].eliminated ? by : null;
     let annexed = 0;
     for (const c of Object.values(game.countries)) {
       if (c.owner !== pid) continue;
@@ -1080,6 +1101,7 @@ export function publicGame(game, viewerId = null, now = Date.now()) {
     events: game.events,
     relations: game.relations,
     teams: game.teams ?? null,
+    capitalRule: game.capitalRule ?? 'empire',
     market: publicMarket(game.market),
     loans: publicLoans(game),
     presidents: Object.fromEntries(Object.entries(game.players).map(([id, p]) => [id, p.president])),

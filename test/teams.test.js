@@ -107,3 +107,13 @@ test('dos bandos en la Segunda Guerra Mundial: el Eje recibe países del Eje y l
     for (const pid of ['c', 'd']) assert.ok(['GBR', 'FRA', 'USA', 'RUS', 'CHN', 'CAN', 'AUS', 'POL'].includes(game.homes[pid]), game.homes[pid]);
   }
 });
+
+test('equipos: no hay alianzas con el equipo contrario', async () => {
+  const { propose } = await import('../server/diplomacy.js');
+  const game = createGame({ teams: 'pairs', countryAssignment: 'random' }, ['a', 'b', 'c', 'd'], {
+    now: 0, profiles: { a: { team: 1 }, b: { team: 1 }, c: { team: 2 }, d: { team: 2 } },
+  });
+  tickGame(game, ['a', 'b', 'c', 'd'], PICK_DURATION_MS);
+  assert.match(propose(game, 'a', 'c', 'alliance', null, PICK_DURATION_MS).error, /equipos contrarios/);
+  assert.equal(propose(game, 'a', 'c', 'nap', null, PICK_DURATION_MS).error, undefined, 'un pacto sí se puede');
+});
