@@ -9,7 +9,7 @@ const tok = (n) => n.toString(16).padStart(32, '0');
 
 test('mapas: todos existen, están conectados y sus protagonistas forman parte del mapa', () => {
   for (const [id, sc] of Object.entries(SCENARIOS)) {
-    const ids = sc.countries ?? WORLD.countries.map((c) => c.id);
+    const ids = sc.countries ?? WORLD.countries.map((c) => c.id).filter((c) => inScenario(id, c));
     for (const c of ids) assert.ok(COUNTRIES.has(c), `${id}: ${c} no existe`);
     const set = new Set(ids);
     const seen = new Set([ids[0]]);
@@ -85,4 +85,19 @@ test('movimiento real: distancias en km y velocidades en km/h, con varios ritmos
   const quickArmy = moveArmy(quick, 'a', 'ESP', 'FRA', infantry, 0).army;
   assert.ok(slowArmy.arriveAt > 24 * 3_600_000, 'realista: más de un día');
   assert.ok(quickArmy.arriveAt < 60_000, 'arcade: menos de un minuto');
+});
+
+test('mapa de la antigua Grecia: polis propias que solo se juegan en ese mapa', () => {
+  const game = createGame({ countryAssignment: 'random', mapScenario: 'greece' }, ['a', 'b', 'c'], { now: 0 });
+  for (const home of Object.values(game.homes)) assert.ok(SCENARIOS.greece.featured.includes(home), home);
+  assert.ok(!inScenario('greece', 'GRC'), 'la Grecia actual no se juega');
+  assert.ok(!inScenario('world', 'G_ATE') && !inScenario('ww2', 'G_ESP'), 'Atenas no aparece en los mapas actuales');
+  const atenas = COUNTRIES.get('G_ATE');
+  assert.ok(atenas.neighbors.includes('G_TEB') && atenas.coastal);
+  assert.ok(COUNTRIES.get('G_CRE').coastal, 'Creta es una isla');
+  for (const id of SCENARIOS.greece.countries) {
+    for (const n of COUNTRIES.get(id).neighbors) assert.ok(inScenario('greece', n), `${id} linda con ${n}`);
+  }
+  const world = createGame({ countryAssignment: 'random', mapScenario: 'world' }, ['a', 'b', 'c', 'd'], { now: 0 });
+  for (const home of Object.values(world.homes)) assert.ok(!home.startsWith('G_'), home);
 });

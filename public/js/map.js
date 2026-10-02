@@ -3,6 +3,7 @@
 
 import { terrainOf, UNITS, UNIT_TYPES } from '/shared/military.js';
 import { STRATEGIC, strategicOf } from '/shared/strategic.js';
+import { REPLACED_BY_ANCIENT } from '/shared/ancient.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MAX_ZOOM = 14;
@@ -24,7 +25,9 @@ const TERRAIN_COLORS = {
 const TERRAIN_SYMBOLS = { mountains: 'mountains', jungle: 'trees', taiga: 'trees', desert: 'dunes' };
 // Países enormes cuyo terreno de juego es «helado» pero que en su mayoría son bosque boreal.
 const VISUAL_TERRAIN = { RUS: 'taiga', CAN: 'taiga' };
-const OFFMAP_FILL = '#9a968a';
+const OFFMAP_FILL = '#8a877e';
+// Países neutrales (los controla la IA): todos del mismo gris para distinguirlos de los jugadores.
+const NEUTRAL_FILL = '#c4c3bb';
 const OWNER_MIX = 0.55; // cuánto color del dueño se mezcla con el terreno
 // Por debajo de este zoom se dibujan los contornos simplificados (mucho más rápidos de pintar).
 const DETAIL_ZOOM = 2.2;
@@ -57,7 +60,10 @@ function terrainShade(id) {
   return terrainCache.get(id);
 }
 const visualTerrain = (id) => VISUAL_TERRAIN[id] ?? terrainOf(id);
-const neutralFill = (id) => hex(terrainShade(id));
+const neutralFill = () => NEUTRAL_FILL;
+// Mapas de otra época (la antigua Grecia) se dibujan encima de los países actuales que sustituyen.
+const REPLACED = new Set(REPLACED_BY_ANCIENT);
+const layerOf = (c) => (c.era ? `era-${c.era}` : REPLACED.has(c.id) ? 'modern-replaced' : 'modern');
 // País de un jugador: su color mezclado con el terreno (se sigue viendo si es desierto, selva...).
 function ownedFill(id, color) {
   const rgb = parseHex(color);
@@ -219,17 +225,23 @@ export class WorldMap {
       this.detailed.push({ el, d, ds: ds || d });
       return el;
     };
-    const landD = world.countries.map((c) => c.d).join('');
-    const landDs = world.countries.map((c) => c.ds || c.d).join('');
-    // Un trazado por tipo de terreno para dibujar encima sus símbolos (montañas, árboles, dunas).
-    const symbolLayers = Object.entries(TERRAIN_SYMBOLS).map(([terrain, pattern]) => {
-      const list = world.countries.filter((c) => visualTerrain(c.id) === terrain);
+    // Costa, relieve y símbolos por capa: los de otra época solo se ven en su mapa.
+    const layers = [...new Set(world.countries.map(layerOf))];
+    const inLayer = (layer) => world.countries.filter((c) => layerOf(c) === layer);
+    const landOf = (layer, cls, list = inLayer(layer)) => {
       const d = list.map((c) => c.d).join('');
-      return d ? both(svg('path', { d, class: `terrain-symbols sym-${terrain}`, fill: `url(#${pattern})` }), d, list.map((c) => c.ds).join('')) : null;
-    }).filter(Boolean);
+      return d ? both(svg('path', { d, class: `${cls} layer-${layer}` }), d, list.map((c) => c.ds || c.d).join('')) : null;
+    };
+    // Un trazado por tipo de terreno para dibujar encima sus símbolos (montañas, árboles, dunas).
+    const symbolLayers = layers.flatMap((layer) => Object.entries(TERRAIN_SYMBOLS).map(([terrain, pattern]) => {
+      const el = landOf(layer, `terrain-symbols sym-${terrain}`, inLayer(layer).filter((c) => visualTerrain(c.id) === terrain));
+      el?.setAttribute('fill', `url(#${pattern})`);
+      return el;
+    })).filter(Boolean);
+    this.layerClass = new Map(world.countries.map((c) => [c.id, `layer-${layerOf(c)}`]));
 
     for (const c of world.countries) {
-      const path = both(svg('path', { d: c.d, class: 'country', id: `c-${c.id}`, 'data-id': c.id, fill: neutralFill(c.id) }), c.d, c.ds);
+      const path = both(svg('path', { d: c.d, class: `country ${this.layerClass.get(c.id)}`, id: `c-${c.id}`, 'data-id': c.id, fill: neutralFill(c.id) }), c.d, c.ds);
       countries.append(path);
       this.paths.set(c.id, path);
 
@@ -261,10 +273,10 @@ export class WorldMap {
       svg('path', { d: world.sphere, class: 'sphere' }),
       svg('path', { d: world.sphere, class: 'sea-waves' }),
       svg('path', { d: world.graticule, class: 'graticule' }),
-      both(svg('path', { d: landD, class: 'coast-halo wide' }), landD, landDs),
-      both(svg('path', { d: landD, class: 'coast-halo' }), landD, landDs),
+      ...layers.map((layer) => landOf(layer, 'coast-halo wide')),
+      ...layers.map((layer) => landOf(layer, 'coast-halo')),
       countries,
-      ...(relief ? [both(svg('path', { d: landD, class: 'relief' }), landD, landDs)] : []),
+      ...(relief ? layers.map((layer) => landOf(layer, 'relief')) : []),
       ...symbolLayers,
       this.hoverPath,
       this.selectPath,
@@ -302,11 +314,11 @@ export class WorldMap {
     for (const [id, path] of this.paths) {
       const style = colors[id];
       const off = this.off.has(id);
-      const fill = off ? OFFMAP_FILL : style?.fill ? ownedFill(id, style.fill) : neutralFill(id);
+      const fill = off ? OFFMAP_FILL : style?.fill ? ownedFill(id, style.fill) : neutralFill();
       if (this.updatedOnce && path.getAttribute('fill') !== fill) this.capturedUntil.set(id, now + 1600);
       const flashing = (this.capturedUntil.get(id) ?? 0) > now;
       path.setAttribute('fill', fill);
-      path.setAttribute('class', ['country', ...(style?.classes ?? []), ...(classes[id] ?? []),
+      path.setAttribute('class', ['country', this.layerClass.get(id), ...(style?.classes ?? []), ...(classes[id] ?? []),
         dimmed.has(id) ? 'dimmed' : '', flashing ? 'captured' : '', off ? 'offmap' : ''].filter(Boolean).join(' '));
       if (style?.fill && !off) path.style.stroke = style.fill;
       else path.style.removeProperty('stroke');
@@ -486,8 +498,18 @@ export class WorldMap {
 
   /** Países que no forman parte del mapa elegido (se ven apagados y no se pueden tocar). */
   setScope(isPlayable, focusIds = null) {
+    // Si se juega un mapa de otra época, se muestra en lugar de los países actuales que sustituye.
+    const eras = new Set(this.world.countries.filter((c) => c.era && isPlayable(c.id)).map((c) => c.era));
+    for (const el of [this.svgEl, this.minimapEl]) {
+      for (const cls of [...el.classList]) if (cls.startsWith('show-era-')) el.classList.remove(cls);
+      for (const era of eras) el.classList.add(`show-era-${era}`);
+    }
+    const hidden = (c) => (c.era ? !eras.has(c.era) : eras.size > 0 && REPLACED.has(c.id));
+    this.hidden = new Set(this.world.countries.filter(hidden).map((c) => c.id));
     this.off = new Set(this.world.countries.filter((c) => !isPlayable(c.id)).map((c) => c.id));
-    for (const label of this.labels) label.off = this.off.has(label.id);
+    for (const label of this.labels) label.off = this.off.has(label.id) || this.hidden.has(label.id);
+    // Los mapas pequeños dejan acercarse más.
+    this.maxZoom = MAX_ZOOM;
     for (const [id, path] of this.paths) path.classList.toggle('offmap', this.off.has(id));
     // Vista inicial del mapa: el recuadro que encierra los países elegidos.
     this.home = null;
@@ -507,6 +529,7 @@ export class WorldMap {
         const aspect = this.fit.w / this.fit.h;
         const vw = Math.max(w, h * aspect);
         this.home = { x: (box.x0 + box.x1) / 2 - vw / 2, y: (box.y0 + box.y1) / 2 - vw / aspect / 2, w: vw, h: vw / aspect };
+        this.maxZoom = Math.max(MAX_ZOOM, (this.fit.w / this.home.w) * 4);
       }
     }
     this.#scheduleApply();
@@ -548,7 +571,8 @@ export class WorldMap {
   centerOn(id, minZoom = 2.5) {
     const c = this.byId.get(id);
     if (!c) return;
-    const zoom = Math.max(this.zoom, minZoom);
+    // En los mapas pequeños nunca se aleja más que la vista inicial del mapa.
+    const zoom = Math.max(this.zoom, minZoom, this.home ? this.fit.w / this.home.w : 0);
     const w = this.fit.w / zoom;
     const h = this.fit.h / zoom;
     this.#animateTo({ x: c.cx - w / 2, y: c.cy - h / 2, w, h });
@@ -614,7 +638,7 @@ export class WorldMap {
 
   #clamp(v) {
     const { width: W, height: H } = this.world;
-    const w = Math.min(Math.max(v.w, this.fit.w / MAX_ZOOM), this.fit.w);
+    const w = Math.min(Math.max(v.w, this.fit.w / (this.maxZoom ?? MAX_ZOOM)), this.fit.w);
     const h = w * (this.fit.h / this.fit.w);
     const clampAxis = (pos, size, total) => (size >= total ? (total - size) / 2 : Math.min(Math.max(pos, 0), total - size));
     return { x: clampAxis(v.x, w, W), y: clampAxis(v.y, h, H), w, h };

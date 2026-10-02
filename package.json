@@ -1,6 +1,6 @@
 {
   "name": "dominio-global",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Juego web multijugador de estrategia y guerra mundial",
   "type": "module",
   "main": "server/index.js",
@@ -8,7 +8,8 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "test": "node --test test/rooms.test.js test/game.test.js test/socket.test.js test/market.test.js test/maps.test.js test/buildings.test.js test/accounts.test.js test/push.test.js test/creative.test.js test/bots.test.js test/client-syntax.test.js",
-    "build:map": "node scripts/build-world.js",
+    "build:map": "node scripts/build-world.js && node scripts/build-greece.js",
+    "build:greece": "node scripts/build-greece.js",
     "load-test": "node scripts/load-test.js"
   },
   "engines": {
@@ -21,8 +22,10 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "d3-delaunay": "^6.0.4",
     "d3-geo": "^3.1.1",
     "i18n-iso-countries": "^7.14.0",
+    "polygon-clipping": "^0.15.7",
     "socket.io-client": "^4.8.1",
     "topojson-client": "^3.1.0",
     "world-atlas": "^2.0.2"

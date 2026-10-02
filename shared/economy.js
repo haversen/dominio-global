@@ -1,6 +1,8 @@
 // Economía compartida por servidor y cliente: producción de cada país y costes de desarrollo.
 // El juego es en tiempo real: la producción se expresa por minuto y se cobra de forma continua.
 
+import { ANCIENT_REGIONS } from './ancient.js';
+
 export const RESOURCES = ['money', 'food', 'oil', 'industry'];
 
 export const RESOURCE_INFO = {
@@ -40,6 +42,7 @@ const PROFILES = {
   GAB: [1, 0, 2, 0], COG: [1, 0, 2, 0], TTO: [1, 0, 2, 0], SDN: [0, 1, 1, 0], SYR: [0, 1, 1, 0],
   YEM: [0, 0, 1, 0], MNG: [0, 1, 0, 0], AFG: [0, 1, 0, 0], GRL: [0, 0, 0, 0], ESH: [0, 0, 0, 0],
   SOM: [0, 1, 0, 0], XSL: [0, 1, 0, 0], TCD: [0, 1, 1, 0], NER: [0, 1, 0, 0], MLI: [0, 1, 0, 0],
+  ...Object.fromEntries(ANCIENT_REGIONS.map((r) => [r.id, r.profile])),
 };
 
 export function emptyResources() {

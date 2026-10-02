@@ -25,8 +25,8 @@ import { VICTORY_REASONS } from '/shared/score.js';
 import { play } from './sound.js';
 import { startTutorial, maybeStartTutorial, refreshTutorialHighlight } from './tutorial.js';
 
-const NEUTRAL_COLOR = '#56614f';
-const NEUTRAL_BADGE = '#3a4437';
+const NEUTRAL_COLOR = '#8d8c85';
+const NEUTRAL_BADGE = '#4a4a45';
 const fmt = new Intl.NumberFormat('es-ES');
 const fmt1 = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 });
 

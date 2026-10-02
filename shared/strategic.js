@@ -4,15 +4,15 @@
 export const STRATEGIC = {
   uranium: {
     label: 'Uranio', icon: '☢️',
-    countries: ['KAZ', 'CAN', 'AUS', 'NAM', 'NER', 'RUS', 'UZB', 'ZAF', 'USA', 'CHN', 'UKR', 'BRA'],
+    countries: ['KAZ', 'CAN', 'AUS', 'NAM', 'NER', 'RUS', 'UZB', 'ZAF', 'USA', 'CHN', 'UKR', 'BRA', 'G_CAP'],
   },
   rareEarths: {
     label: 'Tierras raras', icon: '💎',
-    countries: ['CHN', 'AUS', 'USA', 'MMR', 'IND', 'RUS', 'VNM', 'BRA', 'MYS', 'COD', 'ZAF', 'GRL'],
+    countries: ['CHN', 'AUS', 'USA', 'MMR', 'IND', 'RUS', 'VNM', 'BRA', 'MYS', 'COD', 'ZAF', 'GRL', 'G_ATE', 'G_TRA'],
   },
   rubber: {
     label: 'Caucho', icon: '🌳',
-    countries: ['THA', 'IDN', 'VNM', 'MYS', 'IND', 'CIV', 'LBR', 'CHN', 'BRA', 'GTM', 'PHL', 'LKA', 'NGA', 'KHM', 'MMR'],
+    countries: ['THA', 'IDN', 'VNM', 'MYS', 'IND', 'CIV', 'LBR', 'CHN', 'BRA', 'GTM', 'PHL', 'LKA', 'NGA', 'KHM', 'MMR', 'G_CIL', 'G_LID'],
   },
 };
 export const STRATEGIC_TYPES = Object.keys(STRATEGIC);

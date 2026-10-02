@@ -1,6 +1,8 @@
 // Mapas de juego: el mundo entero, un continente o escenarios inspirados en guerras históricas.
 // Los países fuera del mapa elegido no se juegan (se ven apagados y no se pueden atravesar).
 
+import { ANCIENT_IDS, isAncient } from './ancient.js';
+
 const list = (s) => s.trim().split(/\s+/);
 
 const EUROPE = list(`
@@ -88,6 +90,13 @@ export const SCENARIOS = {
     countries: null,
     featured: ['USA', 'RUS', 'CHN', 'GBR', 'FRA', 'DEU', 'CUB', 'VNM'],
   },
+  greece: {
+    label: '🏛 Antigua Grecia (450 a. C.)',
+    description: 'Polis griegas, reinos de los Balcanes y satrapías persas en torno al mar Egeo.',
+    countries: ANCIENT_IDS,
+    featured: ['G_ATE', 'G_ESP', 'G_MAC', 'G_LID', 'G_TEB', 'G_COR', 'G_BIZ', 'G_ARG'],
+    allowNeighbors: true,
+  },
 };
 export const SCENARIO_IDS = Object.keys(SCENARIOS);
 export const DEFAULT_SCENARIO = 'world';
@@ -99,7 +108,8 @@ export const scenarioOf = (id) => SCENARIOS[id] ?? SCENARIOS[DEFAULT_SCENARIO];
 /** ¿Se juega este país en el mapa elegido? */
 export function inScenario(scenarioId, countryId) {
   const set = sets.get(scenarioId) ?? null;
-  return !set || set.has(countryId);
+  // Las regiones de otra época solo existen en su propio mapa.
+  return set ? set.has(countryId) : !isAncient(countryId);
 }
 
 /** Superficie que cuenta para la dominación (algunos países gigantes cuentan solo su parte del mapa). */

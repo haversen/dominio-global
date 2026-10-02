@@ -1,5 +1,7 @@
 // Reglas militares compartidas por servidor y cliente: unidades, terreno, movimiento, combate y bombas.
 
+import { ANCIENT_REGIONS } from './ancient.js';
+
 // `speed` es la velocidad real de marcha en km/h.
 // Cada unidad pertenece a una clase (para el terreno y el suministro) y a un dominio
 // (tierra, aire o mar, para el movimiento). Las de nivel II y III se desbloquean en el árbol tecnológico.
@@ -92,7 +94,7 @@ const TERRAIN_GROUPS = {
   desert: 'SAU DZA LBY EGY MRT MLI NER TCD SDN ESH OMN ARE QAT KWT IRQ JOR TKM NAM BWA MNG AUS',
   frozen: 'GRL ISL RUS CAN FLK',
 };
-const TERRAIN = {};
+const TERRAIN = Object.fromEntries(ANCIENT_REGIONS.map((r) => [r.id, r.terrain]));
 for (const [terrain, ids] of Object.entries(TERRAIN_GROUPS)) for (const id of ids.split(' ')) TERRAIN[id] = terrain;
 
 export function terrainOf(countryId) {
