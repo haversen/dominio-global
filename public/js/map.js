@@ -3,7 +3,7 @@
 
 import { terrainOf, UNITS, UNIT_TYPES } from '/shared/military.js';
 import { STRATEGIC, strategicOf } from '/shared/strategic.js';
-import { REPLACED_BY_ANCIENT } from '/shared/ancient.js';
+import { replacedBy } from '/shared/ancient.js';
 import { strategicSpec } from '/shared/eras.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -63,8 +63,7 @@ function terrainShade(id) {
 const visualTerrain = (id) => VISUAL_TERRAIN[id] ?? terrainOf(id);
 const neutralFill = () => NEUTRAL_FILL;
 // Mapas de otra época (la antigua Grecia) se dibujan encima de los países actuales que sustituyen.
-const REPLACED = new Set(REPLACED_BY_ANCIENT);
-const layerOf = (c) => (c.era ? `era-${c.era}` : REPLACED.has(c.id) ? 'modern-replaced' : 'modern');
+const layerOf = (c) => (c.era ? `era-${c.era}` : replacedBy(c.id) ? `replaced-${replacedBy(c.id)}` : 'modern');
 // País de un jugador: su color mezclado con el terreno (se sigue viendo si es desierto, selva...).
 function ownedFill(id, color) {
   const rgb = parseHex(color);
@@ -136,7 +135,10 @@ function symbolPatterns() {
 }
 
 // Iconos de los ejércitos en marcha en los mapas de otra época.
-const ERA_ARMY_ICONS = { greece: { sea: '⛵', air: '🏹', armor: '🐎', infantry: '🛡️' } };
+const ERA_ARMY_ICONS = {
+  greece: { sea: '⛵', air: '🏹', armor: '🐎', infantry: '🛡️' },
+  sengoku: { sea: '⛵', air: '🏹', armor: '🐎', infantry: '🎌' },
+};
 
 // Tipo de icono de un ejército en marcha según sus unidades.
 function armyIcon(a, era = null) {
@@ -518,7 +520,7 @@ export class WorldMap {
       for (const cls of [...el.classList]) if (cls.startsWith('show-era-')) el.classList.remove(cls);
       for (const era of eras) el.classList.add(`show-era-${era}`);
     }
-    const hidden = (c) => (c.era ? !eras.has(c.era) : eras.size > 0 && REPLACED.has(c.id));
+    const hidden = (c) => (c.era ? !eras.has(c.era) : eras.has(replacedBy(c.id)));
     this.hidden = new Set(this.world.countries.filter(hidden).map((c) => c.id));
     this.off = new Set(this.world.countries.filter((c) => !isPlayable(c.id)).map((c) => c.id));
     for (const label of this.labels) label.off = this.off.has(label.id) || this.hidden.has(label.id);

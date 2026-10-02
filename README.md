@@ -115,7 +115,8 @@ En la sala se elige el ritmo:
 
 - **Mundo entero**, **solo Europa**, **solo Asia**, **solo América** y **solo África**.
 - Escenarios inspirados en guerras: **Gran Guerra (1914-1918)**, **Segunda Guerra Mundial**, **Guerra del Pacífico** y **Guerra Fría**. Tienen países protagonistas (⭐) que se reparten primero, y en los tres primeros se puede empezar al lado de otro jugador.
-- **🏛 Antigua Grecia (450 a. C.)**: un mapa propio con 44 polis, reinos y satrapías persas (Atenas, Esparta, Tebas, Corinto, Macedonia, Lidia…) recortados sobre la costa real del Egeo (`shared/ancient.js`, generado con `npm run build:greece`).
+- **🏛 Antigua Grecia (450 a. C.)**: un mapa propio con 44 polis, reinos y satrapías persas (Atenas, Esparta, Tebas, Corinto, Macedonia, Lidia…) recortados sobre la costa real del Egeo (`shared/ancient.js`, generado con `npm run build:historic`).
+- **🏯 Japón samurái (1560)**: la época Sengoku con 39 clanes y reinos japoneses (Oda, Takeda, Uesugi, Mōri, Shimazu, Tokugawa, Date, Hōjō, el shogunato Ashikaga, el reino de Ryūkyū, los ainu…), las 8 provincias de la Corea Joseon y la China Ming con los yurchen y los mongoles. Tropas de la época: ashigaru, samuráis, ninjas, caballería samurái, arqueros, arcabuceros, cañones, kobaya, sekibune y atakebune.
 - En la Antigua Grecia las tropas son de la época (`shared/eras.js`): hoplitas, falange, espartanos, caballería, carros, elefantes, arqueros, catapultas, balistas, trirremes, birremes y quinquerremes, con velocidades reales a pie, a caballo y a remo. Los materiales son dracmas, trigo, aceite y bronce; hay flechas incendiarias y fuego griego, pero no bomba nuclear ni carrera espacial.
 - La victoria científica (llegar a la Luna) solo existe en la **Guerra Fría**; en los demás mapas la Luna da puntos.
 - Los países neutrales (controlados por la IA) se pintan todos del mismo gris para distinguirlos de los jugadores.

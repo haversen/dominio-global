@@ -81,6 +81,10 @@ const ERA_SPEEDS = {
     infantry: 5, mech: 5, specops: 6, tank: 12, heavytank: 10, mbt: 7,
     aircraft: 5, bomber: 3, jet: 4, navy: 15, submarine: 13, carrier: 11,
   },
+  sengoku: {
+    infantry: 5, mech: 5, specops: 7, tank: 12, heavytank: 11, mbt: 9,
+    aircraft: 5, bomber: 4, jet: 3, navy: 12, submarine: 10, carrier: 8,
+  },
 };
 
 /** Velocidad de una unidad (km/h) en la época de un mapa (o la normal). */

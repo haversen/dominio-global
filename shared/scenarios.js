@@ -1,7 +1,7 @@
 // Mapas de juego: el mundo entero, un continente o escenarios inspirados en guerras históricas.
 // Los países fuera del mapa elegido no se juegan (se ven apagados y no se pueden atravesar).
 
-import { ANCIENT_IDS, isAncient } from './ancient.js';
+import { historicIds, isAncient } from './ancient.js';
 
 const list = (s) => s.trim().split(/\s+/);
 
@@ -94,10 +94,21 @@ export const SCENARIOS = {
   greece: {
     label: '🏛 Antigua Grecia (450 a. C.)',
     description: 'Polis griegas, reinos de los Balcanes y satrapías persas en torno al mar Egeo.',
-    countries: ANCIENT_IDS,
+    countries: historicIds('greece'),
     era: 'greece', // tropas, materiales y tecnología de la época (shared/eras.js)
     featured: ['G_ATE', 'G_ESP', 'G_MAC', 'G_LID', 'G_TEB', 'G_COR', 'G_BIZ', 'G_ARG'],
     allowNeighbors: true,
+  },
+  sengoku: {
+    label: '🏯 Japón samurái (1560)',
+    description: 'La época Sengoku: clanes samuráis en guerra por Japón, con la Corea Joseon, la China Ming, los yurchen, los mongoles, el reino de Ryūkyū y los ainu.',
+    countries: historicIds('sengoku'),
+    era: 'sengoku',
+    featured: ['J_ODA', 'J_TAK', 'J_UES', 'J_MOR', 'J_SHI', 'J_JOS', 'J_MIN', 'J_HOJ', 'J_DAT', 'J_TOK',
+      'J_IMA', 'J_OTO', 'J_CHO', 'J_ASK', 'J_MIY', 'J_ASA'],
+    allowNeighbors: true,
+    // China es enorme: para la dominación cuenta como un puñado de provincias japonesas.
+    areas: { J_MIN: 40_000, J_LIA: 25_000, J_SHA: 30_000, J_NAJ: 40_000, J_ZHE: 30_000, J_FUJ: 25_000, J_JUR: 25_000, J_MON: 20_000 },
   },
 };
 export const SCENARIO_IDS = Object.keys(SCENARIOS);

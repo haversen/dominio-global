@@ -148,3 +148,23 @@ test('la victoria científica solo existe en la Guerra Fría', async () => {
   assert.ok(applySettingsPatch(base, onlySpace).error, 'fuera de la Guerra Fría no cuenta como victoria');
   assert.equal(applySettingsPatch({ ...base, mapScenario: 'coldwar' }, onlySpace).error, undefined);
 });
+
+test('mapa samurái: clanes, Joseon y Ming, con tropas de la época', async () => {
+  const { applyEra } = await import('../shared/eras.js');
+  const { UNITS } = await import('../shared/military.js');
+  const game = createGame({ countryAssignment: 'random', mapScenario: 'sengoku' }, ['a', 'b', 'c', 'd'], { now: 0 });
+  for (const home of Object.values(game.homes)) assert.ok(SCENARIOS.sengoku.featured.includes(home), home);
+  assert.ok(!inScenario('sengoku', 'JPN') && !inScenario('world', 'J_ODA'));
+  assert.ok(COUNTRIES.get('J_ODA').neighbors.includes('J_TOK'), 'Oda linda con Tokugawa');
+  assert.ok(COUNTRIES.get('J_SOO').neighbors.includes('J_GYE'), 'Tsushima conecta Japón con Corea');
+  for (const id of SCENARIOS.sengoku.countries) {
+    for (const n of COUNTRIES.get(id).neighbors) assert.ok(inScenario('sengoku', n), `${id} linda con ${n}`);
+  }
+  // China cuenta poco para la dominación aunque sea enorme.
+  game.countries.J_JUR.owner = 'a';
+  assert.ok(currentStandings(game).find((r) => r.id === 'a').areaPct < 15);
+  assert.match(launchStrike(game, 'a', 'nuke', 'J_ODA', 0).error, /época|marcha/);
+  applyEra('sengoku');
+  assert.equal(UNITS.specops.label, 'Ninjas');
+  applyEra(null);
+});

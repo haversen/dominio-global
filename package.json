@@ -8,8 +8,8 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "test": "node --test test/rooms.test.js test/game.test.js test/socket.test.js test/market.test.js test/maps.test.js test/buildings.test.js test/accounts.test.js test/push.test.js test/creative.test.js test/bots.test.js test/client-syntax.test.js",
-    "build:map": "node scripts/build-world.js && node scripts/build-greece.js",
-    "build:greece": "node scripts/build-greece.js",
+    "build:map": "node scripts/build-world.js && node scripts/build-historic.js",
+    "build:historic": "node scripts/build-historic.js",
     "load-test": "node scripts/load-test.js"
   },
   "engines": {

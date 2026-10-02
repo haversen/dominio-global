@@ -4,15 +4,15 @@
 export const STRATEGIC = {
   uranium: {
     label: 'Uranio', icon: '☢️',
-    countries: ['KAZ', 'CAN', 'AUS', 'NAM', 'NER', 'RUS', 'UZB', 'ZAF', 'USA', 'CHN', 'UKR', 'BRA', 'G_CAP'],
+    countries: ['KAZ', 'CAN', 'AUS', 'NAM', 'NER', 'RUS', 'UZB', 'ZAF', 'USA', 'CHN', 'UKR', 'BRA', 'G_CAP', 'J_SHI', 'J_AIN'],
   },
   rareEarths: {
     label: 'Tierras raras', icon: '💎',
-    countries: ['CHN', 'AUS', 'USA', 'MMR', 'IND', 'RUS', 'VNM', 'BRA', 'MYS', 'COD', 'ZAF', 'GRL', 'G_ATE', 'G_TRA'],
+    countries: ['CHN', 'AUS', 'USA', 'MMR', 'IND', 'RUS', 'VNM', 'BRA', 'MYS', 'COD', 'ZAF', 'GRL', 'G_ATE', 'G_TRA', 'J_AMA', 'J_UES'],
   },
   rubber: {
     label: 'Caucho', icon: '🌳',
-    countries: ['THA', 'IDN', 'VNM', 'MYS', 'IND', 'CIV', 'LBR', 'CHN', 'BRA', 'GTM', 'PHL', 'LKA', 'NGA', 'KHM', 'MMR', 'G_CIL', 'G_LID'],
+    countries: ['THA', 'IDN', 'VNM', 'MYS', 'IND', 'CIV', 'LBR', 'CHN', 'BRA', 'GTM', 'PHL', 'LKA', 'NGA', 'KHM', 'MMR', 'G_CIL', 'G_LID', 'J_SAI', 'J_JUR'],
   },
 };
 export const STRATEGIC_TYPES = Object.keys(STRATEGIC);
