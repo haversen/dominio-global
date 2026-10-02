@@ -119,3 +119,79 @@ test('espionaje: sabotaje, robo de tecnología, revueltas y espías capturados',
   assert.ok(g.events.some((e) => e.type === 'spy' && e.caught && e.by === 'a'));
   assert.match(spy(g, 'a', 'recon', 'ESP', T0 + 999_999).error, /tus propios/);
 });
+
+// ---------- Eventos mundiales, ONU, misiones y espacio ----------
+
+import { researchSpace, voteInUN, checkEnd, researchNode } from '../server/game.js';
+import { trade } from '../server/market.js';
+import { SPACE_STAGES, FIRST_EVENT_MS, UN_FIRST_MS } from '../shared/world.js';
+
+test('eventos mundiales: salen en el noticiero y cambian la economía', () => {
+  const g = game({ worldEvents: true });
+  assert.equal(g.world.events, true);
+  // Forzamos una crisis del petróleo: la tirada elige el primer evento de la lista.
+  const t = T0 + FIRST_EVENT_MS + 1000;
+  const oilBefore = g.market.prices.oil;
+  const res = tickGame(g, players, t, fixed(0));
+  assert.ok(res.events.some((e) => e.type === 'world-event' && e.news.event === 'oilCrisis'));
+  assert.ok(g.world.news.some((n) => n.headline === 'CRISIS DEL PETRÓLEO'), 'sale en el Diario Global');
+  assert.ok(g.market.prices.oil > oilBefore, 'el precio del petróleo se dispara');
+  assert.ok(g.world.active.some((e) => e.type === 'oilCrisis'));
+
+  const off = game({ worldEvents: false });
+  assert.equal(tickGame(off, players, t, fixed(0)).events.filter((e) => e.type === 'world-event').length, 0, 'se pueden desactivar');
+});
+
+test('ONU: se vota con el peso de los países y las sanciones bloquean el mercado', () => {
+  const g = game({ unAssembly: true });
+  g.world.offender = 'b'; // b ha lanzado una nuclear: la ONU propondrá sancionarle
+  const t = T0 + UN_FIRST_MS + 1000;
+  const res = tickGame(g, players, t, fixed(0.5));
+  const open = res.events.find((e) => e.type === 'un-open');
+  assert.equal(open.session.type, 'sanctions');
+  assert.equal(open.session.target, 'b');
+  assert.equal(voteInUN(g, 'a', 'yes'), null);
+  assert.equal(voteInUN(g, 'b', 'no'), null);
+  g.countries.FRA.owner = 'a'; // a tiene 2 países: su voto pesa más
+  const closed = tickGame(g, players, g.world.session.endsAt + 1, fixed(0.5)).events.find((e) => e.type === 'un-result');
+  assert.equal(closed.passed, true);
+  assert.match(trade(g, 'b', 'food', 'buy', 10).error, /ONU/);
+  assert.equal(trade(g, 'a', 'food', 'buy', 10).error, undefined);
+  assert.match(voteInUN(g, 'a', 'yes'), /ninguna votación/);
+});
+
+test('misiones secretas: se reparten, se cumplen y dan puntos o la victoria', () => {
+  const g = game({ winMission: true });
+  assert.ok(g.players.a.mission && g.players.b.mission, 'cada jugador tiene su misión');
+  g.players.a.mission = { type: 'tycoon', done: false };
+  g.players.a.resources.money = 3000;
+  const res = tickGame(g, players, T0 + 1000);
+  assert.ok(res.events.some((e) => e.type === 'mission' && e.player === 'a'));
+  assert.equal(g.result?.winner, 'a');
+  assert.equal(g.result.reason, 'mission');
+});
+
+test('carrera espacial: satélite (ve a través de la niebla), estación y Luna', () => {
+  const g = game({ winSpace: true, fogOfWar: true });
+  assert.match(researchSpace(g, 'a', T0), /bombarderos/);
+  g.players.a.unlocked.push('air2', 'bomb1', 'bomb2');
+  assert.equal(researchSpace(g, 'a', T0), null);
+  assert.match(researchSpace(g, 'a', T0), /ya está trabajando/);
+  let t = T0 + SPACE_STAGES[0].ms;
+  tickGame(g, players, t);
+  assert.equal(g.players.a.space.stage, 1);
+  assert.equal(decodeCountries(publicGame(g, 'a', t).countries).JPN.hidden, undefined, 'el satélite lo ve todo');
+
+  assert.equal(researchSpace(g, 'a', t), null);
+  t += SPACE_STAGES[1].ms;
+  tickGame(g, players, t);
+  assert.equal(g.players.a.space.stage, 2);
+  assert.match(researchSpace(g, 'a', t), /6 países/, 'la Luna exige un país grande');
+  for (const id of ['PRT', 'FRA', 'MAR', 'AND', 'ITA', 'DEU']) if (g.countries[id]) g.countries[id].owner = 'a';
+  assert.equal(researchSpace(g, 'a', t), null);
+  // La estación espacial hace la investigación un 20 % más rápida.
+  assert.ok(g.players.a.research.space.readyAt - t < SPACE_STAGES[2].ms * g.players.a.space.stage);
+  tickGame(g, players, t + SPACE_STAGES[2].ms);
+  assert.equal(g.result?.winner, 'a');
+  assert.equal(g.result.reason, 'space');
+});

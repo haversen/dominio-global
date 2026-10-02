@@ -1227,6 +1227,12 @@ button, a, .country { touch-action: manipulation; }
 .offer-side { display: grid; gap: 4px; }
 .offer-side select, .offer-side input { width: 100%; }
 
+/* En pantallas medianas la barra superior muestra solo iconos para que quepa todo */
+@media (max-width: 1600px) {
+  .topbar-btn .btn-label { display: none; }
+  .topbar-btn .btn-icon { display: inline; }
+}
+
 @media (max-width: 1280px) {
   .game-brand, .room-tag { display: none; }
 }
@@ -1359,3 +1365,26 @@ button, a, .country { touch-action: manipulation; }
 .stability-danger .stability-bar i { background: var(--danger); }
 .stability-danger small { color: var(--danger); }
 .weariness { margin: 0; font-size: 13px; color: #ffb36b; }
+
+/* Mundo: ONU, misión, eventos y Diario Global */
+.toast-news { border-left-color: #e8dcc0; background: #f3ead6; color: #2a2116; font-family: Georgia, 'Times New Roman', serif; }
+.un-session { display: grid; gap: 8px; padding: 12px; border: 1px solid #5b8fd6; border-radius: var(--radius); background: rgba(91, 143, 214, 0.08); }
+.un-session p { margin: 0; }
+.un-title { display: flex; align-items: center; gap: 8px; font-size: 16px; }
+.un-title strong { flex: 1; }
+.un-votes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mission { display: grid; gap: 8px; padding: 12px; border: 1px dashed var(--accent); border-radius: var(--radius); background: rgba(201, 162, 39, 0.06); }
+.mission.done { border-style: solid; border-color: var(--success); }
+.world-event { margin: 0; }
+.newspaper { background: #efe6d2; color: #2a2116; border-radius: var(--radius); padding: 14px; font-family: Georgia, 'Times New Roman', serif; }
+.newspaper-head { display: grid; text-align: center; border-bottom: 3px double #2a2116; padding-bottom: 6px; }
+.newspaper-name { font-size: 26px; font-weight: 700; letter-spacing: 0.08em; }
+.newspaper-head small { font-style: italic; color: #5b4b33; }
+.news-item { border-bottom: 1px solid rgba(42, 33, 22, 0.25); padding: 8px 0; }
+.news-item:last-child { border-bottom: none; }
+.news-item h5 { margin: 0 0 4px; font-size: 16px; letter-spacing: 0.04em; }
+.news-item p { margin: 0; font-size: 14px; line-height: 1.4; }
+.news-item time { font-size: 11px; color: #6b5a40; }
+.newspaper .muted { color: #6b5a40; }
+.space-stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 780px) { .space-stages { grid-template-columns: minmax(0, 1fr); } }

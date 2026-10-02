@@ -469,6 +469,18 @@ export function createGameServer({
       broadcastRoom(room);
     });
 
+    handle('game:space', () => {
+      const { room, player } = current();
+      rooms.researchSpace(room, player);
+      broadcastRoom(room);
+    });
+
+    handle('un:vote', ({ vote }) => {
+      const { room, player } = current();
+      rooms.voteUN(room, player, vote);
+      broadcastRoom(room);
+    });
+
     handle('game:spy', ({ mission, countryId }) => {
       const { room, player } = current();
       const result = rooms.spy(room, player, mission, countryId);

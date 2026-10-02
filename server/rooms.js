@@ -3,11 +3,13 @@ import { defaultSettings, applySettingsPatch } from '../shared/settings.js';
 import {
   createGame, pickCountry, allPicked, finishPicking, releasePlayer, tickGame, publicGame,
   privateGameWithStandings, developCountry, recruit, moveArmy, research, researchNode, launchStrike, build, spy,
+  researchSpace, voteInUN,
   checkEnd, currentStandings, COUNTRIES,
 } from './game.js';
 import { trade, postOffer, acceptOffer, cancelOffer } from './market.js';
 import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, DEFAULT_PRESIDENT } from '../shared/leaders.js';
-import { inScenario, scenarioOf } from '../shared/scenarios.js';
+import { inScenario, scenarioOf, REGIONS } from '../shared/scenarios.js';
+import { UN_RESOLUTIONS, MISSIONS, SPACE_STAGES, fill } from '../shared/world.js';
 import { WEAPONS } from '../shared/military.js';
 import { pairKey } from '../shared/diplomacy.js';
 import { VICTORY_REASONS } from '../shared/score.js';
@@ -352,6 +354,30 @@ export class RoomManager {
       this.#system(room, `☢ ¡ALERTA! ${player.name} ha lanzado una bomba nuclear contra ${COUNTRIES.get(targetId).name}`);
     }
     return strike;
+  }
+
+  // ---------- Carrera espacial y ONU ----------
+
+  researchSpace(room, player) {
+    this.#requirePlaying(room);
+    const error = researchSpace(room.game, player.id);
+    if (error) throw new GameError('INVALID_ACTION', error);
+  }
+
+  voteUN(room, player, vote) {
+    this.#requirePlaying(room);
+    const error = voteInUN(room.game, player.id, vote);
+    if (error) throw new GameError('INVALID_ACTION', error);
+  }
+
+  /** Texto de un titular con los nombres de jugadores y países ya puestos. */
+  #newsText(room, news) {
+    const v = news.vars ?? {};
+    const pname = (id) => room.players.get(id)?.name ?? 'un jugador';
+    return fill(news.text, {
+      player: pname(v.player), target: pname(v.target), a: pname(v.a), b: pname(v.b),
+      country: v.country ? COUNTRIES.get(v.country)?.name : 'un país',
+    });
   }
 
   // ---------- Espionaje ----------
@@ -732,6 +758,40 @@ export class RoomManager {
     }
     if (event.type === 'strike' && event.defender && !event.intercepted) {
       this.#notify(room, event.defender, `💣 Bombardeo en ${COUNTRIES.get(event.country).name}`, `${name(event.attacker)} ha alcanzado tu país.`, `strike-${event.country}`);
+    }
+    if (event.type === 'world-event') {
+      this.#system(room, `📰 ${event.news.headline}: ${this.#newsText(room, event.news)}`);
+      return;
+    }
+    if (event.type === 'un-open') {
+      const s = event.session;
+      const spec = UN_RESOLUTIONS[s.type];
+      const vars = { target: name(s.target), a: name(s.a), b: name(s.b) };
+      this.#system(room, `🇺🇳 Votación en la ONU: ${fill(spec.title, vars)}. Votad en 🌐 Mundo antes de que acabe el tiempo`);
+      for (const p of room.players.values()) {
+        this.#notify(room, p.id, '🇺🇳 Votación en la ONU', fill(spec.title, vars), 'un');
+      }
+      return;
+    }
+    if (event.type === 'un-result') {
+      this.#system(room, `🇺🇳 ${this.#newsText(room, event.news)}`);
+      return;
+    }
+    if (event.type === 'space') {
+      const stage = SPACE_STAGES[event.stage - 1];
+      this.#system(room, `${stage.icon} ${name(event.player)} completa la misión espacial: ${stage.label}`);
+      for (const p of room.players.values()) {
+        if (p.id !== event.player) this.#notify(room, p.id, `${stage.icon} Carrera espacial`, `${name(event.player)}: ${stage.label}`, 'space');
+      }
+      return;
+    }
+    if (event.type === 'mission') {
+      const m = event.mission;
+      const text = fill(MISSIONS[m.type].text, {
+        region: m.region ? REGIONS[m.region].label : '', target: name(m.target),
+      });
+      this.#system(room, `🎯 ${name(event.player)} ha cumplido su misión secreta: «${text}»`);
+      return;
     }
     if (event.type === 'revolt') {
       this.#notify(room, event.player, `✊ Revuelta en ${COUNTRIES.get(event.country).name}`, 'La población se ha sublevado y has perdido el país.', `revolt-${event.country}`);

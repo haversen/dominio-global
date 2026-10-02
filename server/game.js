@@ -23,6 +23,9 @@ import { DEFAULT_PRESIDENT, PRESIDENTS, leaderBonus, discountCost } from '../sha
 import { createMarket, tickMarket, forgetOffers, publicMarket } from './market.js';
 import { needOf, hasAccess, missingText } from '../shared/strategic.js';
 import { runSpyMission } from './espionage.js';
+import { createWorld, tickWorld, worldEffects, isSanctioned, nukesBanned, addNews, voteUN } from './world.js';
+import { assignMissions, checkMissions, missionProgress } from './missions.js';
+import { SPACE_STAGES, MISSIONS, FIRST_EVENT_MS, UN_FIRST_MS } from '../shared/world.js';
 
 // Mapa del mundo generado por scripts/build-world.js.
 export const WORLD = JSON.parse(readFileSync(new URL('../shared/world.json', import.meta.url), 'utf8'));
@@ -100,12 +103,16 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
       president: PRESIDENTS[profiles[id]?.president] ? profiles[id].president : DEFAULT_PRESIDENT,
       stats: { battlesWon: 0, battlesLost: 0, conquests: 0, unitsLost: 0 },
       intel: {},                   // país -> hasta cuándo lo revela un espía
+      space: { stage: 0 },         // carrera espacial: 0 nada, 1 satélite, 2 estación, 3 Luna
+      mission: null,               // misión secreta (se reparte al empezar)
     }])),
     startPlayers: playerIds.length,
     victory: {
       domination: settings.winDomination ? settings.dominationPercent : null,
       lastStanding: Boolean(settings.winLastStanding),
       timeLimitMs: settings.winTimeLimit ? settings.timeLimitMinutes * 60_000 : null,
+      space: settings.winSpace === true,
+      mission: settings.winMission === true,
     },
     result: null,
     relations: {},
@@ -120,6 +127,7 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
 
   game.ai = createAIState(settings.aiDifficulty, game.countries, now);
   game.market = createMarket(now);
+  game.world = createWorld(settings, now);
 
   // Los países elegidos en la sala se respetan (si siguen siendo válidos).
   for (const id of playerIds) {
@@ -185,6 +193,11 @@ export function finishPicking(game, playerIds, rng = Math.random, now = Date.now
   game.pickDeadline = null;
   game.phase = 'active';
   game.nextStabilityCheck = now + STABILITY.checkMs;
+  assignMissions(game, playerIds.filter((id) => game.players[id]), rng, { playable: (id) => playable(game, id) });
+  if (game.world) {
+    game.world.nextEventAt = now + FIRST_EVENT_MS / game.speed;
+    game.world.nextSessionAt = now + UN_FIRST_MS / game.speed;
+  }
   game.startedAt = now;
   game.lastTick = now;
   if (game.ai) {
@@ -238,11 +251,16 @@ export function strategicError(game, playerId, what) {
 
 function applyIncomeTech(game, playerId, raw) {
   const weariness = game.players[playerId]?.weariness ?? 0;
-  const mult = techBonus.income(game.players[playerId]?.tech) * bonusOf(game, playerId).income * (1 - weariness);
+  const sanctions = isSanctioned(game, playerId, game.lastTick) ? 0.8 : 1; // sanciones de la ONU
+  const mult = techBonus.income(game.players[playerId]?.tech) * bonusOf(game, playerId).income * (1 - weariness) * sanctions;
+  const world = worldEffects(game, game.lastTick).income; // eventos mundiales
   const total = emptyResources();
-  for (const r of RESOURCES) total[r] = (raw?.[r] ?? 0) * mult;
+  for (const r of RESOURCES) total[r] = (raw?.[r] ?? 0) * mult * world[r];
   return total;
 }
+
+// La estación espacial acelera todas las investigaciones.
+const researchFactor = (game, playerId) => bonusOf(game, playerId).researchMs * ((game.players[playerId]?.space?.stage ?? 0) >= 2 ? 0.8 : 1);
 
 function upkeepOfUnits(game, playerId, units) {
   const total = emptyResources();
@@ -293,7 +311,8 @@ export function recruit(game, playerId, countryId, type, count, now = Date.now()
 
   addResources(player.resources, cost, -1);
   // El cuartel del país y las modificaciones del árbol acortan el entrenamiento.
-  const ms = unit.trainMs * trainFactor(country.buildings) * (treeBonus(player.unlocked).train[unit.class] ?? 1);
+  const ms = unit.trainMs * trainFactor(country.buildings) * (treeBonus(player.unlocked).train[unit.class] ?? 1)
+    * worldEffects(game, now).train;
   country.training.push({ type, count, readyAt: now + Math.round(ms / game.speed) });
   return null;
 }
@@ -350,7 +369,7 @@ export function research(game, playerId, tech, now = Date.now()) {
   if (!canAfford(player.resources, cost)) return 'No tienes recursos suficientes';
 
   addResources(player.resources, cost, -1);
-  const ms = techMs(toLevel) * bonusOf(game, playerId).researchMs;
+  const ms = techMs(toLevel) * researchFactor(game, playerId);
   player.research[DOCTRINE_BRANCH.id] = { tech, toLevel, readyAt: now + Math.round(ms / game.speed) };
   return null;
 }
@@ -368,9 +387,38 @@ export function researchNode(game, playerId, nodeId, now = Date.now()) {
   if (!canAfford(player.resources, node.cost)) return 'No tienes recursos suficientes';
 
   addResources(player.resources, node.cost, -1);
-  const ms = node.ms * bonusOf(game, playerId).researchMs;
+  const ms = node.ms * researchFactor(game, playerId);
   player.research[node.branch] = { node: nodeId, readyAt: now + Math.round(ms / game.speed) };
   return null;
+}
+
+/** Siguiente etapa de la carrera espacial (satélite, estación, Luna). Usa su propio hueco de investigación. */
+export function researchSpace(game, playerId, now = Date.now()) {
+  if (game.phase !== 'active') return 'La partida todavía no está en marcha';
+  const player = game.players[playerId];
+  if (!player || player.eliminated) return 'Jugador no válido';
+  normalizeResearch(player);
+  player.space ??= { stage: 0 };
+  const stage = SPACE_STAGES[player.space.stage];
+  if (!stage) return 'Ya has llegado a la Luna';
+  if (player.research.space) return 'Tu programa espacial ya está trabajando en una misión';
+  if (stage.requires.some((r) => !player.unlocked.includes(r))) {
+    return 'Primero investiga los bombarderos (Aviación II) y el misil balístico (Bombas II)';
+  }
+  if (stage.minCountries && Object.values(game.countries).filter((c) => c.owner === playerId).length < stage.minCountries) {
+    return `Necesitas controlar al menos ${stage.minCountries} países para financiar la misión`;
+  }
+  const cost = discountCost(stage.cost, bonusOf(game, playerId).cost);
+  if (!canAfford(player.resources, cost)) return 'No tienes recursos suficientes';
+  addResources(player.resources, cost, -1);
+  player.research.space = { space: player.space.stage + 1, readyAt: now + Math.round((stage.ms * researchFactor(game, playerId)) / game.speed) };
+  return null;
+}
+
+/** Voto en la ONU. */
+export function voteInUN(game, playerId, vote) {
+  if (game.phase !== 'active') return 'La partida todavía no está en marcha';
+  return voteUN(game, playerId, vote);
 }
 
 // Partidas guardadas con la versión anterior: una sola investigación en `research`.
@@ -378,6 +426,7 @@ function normalizeResearch(player) {
   const r = player.research;
   if (!r) player.research = {};
   else if ('readyAt' in r) player.research = { [r.node ? TECH_TREE[r.node].branch : DOCTRINE_BRANCH.id]: r };
+  player.space ??= { stage: 0 };
 }
 
 // Saltos de frontera desde cualquier país del jugador (para el alcance de las bombas).
@@ -421,6 +470,7 @@ export function launchStrike(game, playerId, weapon, targetId, now = Date.now())
     if (rel !== 'war') return { error: 'Solo puedes bombardear a jugadores con los que estás en guerra' };
   }
   if ((player.cooldowns[weapon] ?? 0) > now) return { error: 'Esa arma todavía se está recargando' };
+  if (weapon === 'nuke' && nukesBanned(game, now)) return { error: 'La ONU ha prohibido las armas nucleares por ahora' };
   const missing = strategicError(game, playerId, { weapon });
   if (missing) return { error: missing };
   const reach = hopsFromPlayer(game, playerId, spec.range).get(targetId);
@@ -439,6 +489,7 @@ export function launchStrike(game, playerId, weapon, targetId, now = Date.now())
     arriveAt: now + Math.round(spec.flightMs / game.speed),
   };
   game.strikes.push(strike);
+  if (weapon === 'nuke' && game.world) game.world.offender = playerId; // la ONU votará sanciones
   return { strike };
 }
 
@@ -491,6 +542,10 @@ export function spy(game, playerId, mission, countryId, now = Date.now(), rng = 
   if (game.countries[countryId] && !playable(game, countryId)) return { error: 'Ese país no forma parte de este mapa' };
   const result = runSpyMission(game, playerId, mission, countryId, { now, rng, COUNTRIES, nextId: () => ++game.seq });
   if (result.event) pushEvent(game, result.event);
+  if (result.success) {
+    const stats = game.players[playerId].stats;
+    stats.spySuccess = (stats.spySuccess ?? 0) + 1;
+  }
   return result;
 }
 
@@ -523,6 +578,8 @@ export function moveArmy(game, playerId, fromId, toId, rawUnits, now = Date.now(
   }
 
   addUnits(source.units, units, -1);
+  let duration = travelMs(from, to, units, playerSpeed(game, playerId), speedMods(game, playerId));
+  if (from.sea.includes(toId) || isNavalRoute(from, to)) duration *= worldEffects(game, now).sea; // huracanes
   const army = {
     id: ++game.seq,
     owner: playerId,
@@ -530,7 +587,7 @@ export function moveArmy(game, playerId, fromId, toId, rawUnits, now = Date.now(
     to: toId,
     units,
     departAt: now,
-    arriveAt: now + travelMs(from, to, units, playerSpeed(game, playerId), speedMods(game, playerId)),
+    arriveAt: now + Math.round(duration),
   };
   game.armies.push(army);
   return { army };
@@ -604,7 +661,16 @@ export function tickGame(game, playerIds, now = Date.now(), rng = Math.random) {
     for (const [branch, r] of Object.entries(player.research)) {
       if (r.readyAt > now) continue;
       if (r.node) player.unlocked.push(r.node);
-      else player.tech[r.tech] = r.toLevel;
+      else if (r.space) {
+        player.space.stage = r.space;
+        const stage = SPACE_STAGES[r.space - 1];
+        const news = addNews(game, {
+          ts: now, kind: 'space', icon: stage.icon, headline: `${stage.label.toUpperCase()}`,
+          text: `{player} completa su misión espacial: ${stage.label.toLowerCase()}.`, vars: { player: pid },
+        });
+        events.push({ type: 'space', player: pid, stage: r.space, news });
+        changed = true;
+      } else player.tech[r.tech] = r.toLevel;
       events.push({ type: 'research', player: pid, ...r });
       delete player.research[branch];
     }
@@ -641,6 +707,21 @@ export function tickGame(game, playerIds, now = Date.now(), rng = Math.random) {
   if (tickAI(game, COUNTRIES, now)) changed = true;
   if (tickMarket(game, now)) changed = true;
 
+  // Eventos mundiales y ONU.
+  for (const e of tickWorld(game, now, rng, worldCtx(game))) {
+    changed = true;
+    if (e.type !== 'world-changed') events.push(e);
+  }
+  // Misiones secretas cumplidas (se revelan a todos).
+  for (const { player, mission } of checkMissions(game, missionCtx(game))) {
+    const news = addNews(game, {
+      ts: now, kind: 'mission', icon: MISSIONS[mission.type].icon, headline: 'MISIÓN SECRETA CUMPLIDA',
+      text: '{player} revela su objetivo oculto y lo ha conseguido.', vars: { player },
+    });
+    events.push({ type: 'mission', player, mission, news });
+    changed = true;
+  }
+
   const ended = checkEnd(game, now);
   if (ended) changed = true;
   return { changed, events, ended };
@@ -652,11 +733,26 @@ export function currentStandings(game) {
   return standings(game, (id) => scenarioArea(scenario, COUNTRIES.get(id)), TOTAL_AREA[scenario] ?? TOTAL_AREA.world);
 }
 
+const worldCtx = (game) => ({
+  playable: (id) => playable(game, id),
+  alivePlayers: () => Object.keys(game.players).filter((id) => !game.players[id].eliminated),
+  ownedBy: (pid) => Object.keys(game.countries).filter((id) => game.countries[id].owner === pid),
+  isCapital: (id) => Object.values(game.homes).includes(id),
+  standings: () => currentStandings(game),
+});
+const missionCtx = (game) => ({ playable: (id) => playable(game, id), COUNTRIES });
+
 /** Si se cumple alguna condición de victoria, termina la partida. Devuelve el resultado o null. */
 export function checkEnd(game, now = Date.now()) {
   if (game.phase !== 'active') return null;
   const table = currentStandings(game);
-  const outcome = checkVictory(game, table, now);
+  const alive = Object.entries(game.players).filter(([, p]) => !p.eliminated);
+  // Victoria científica (llegar a la Luna) y por misión secreta, si están activadas.
+  const spaceWinner = game.victory.space && alive.find(([, p]) => (p.space?.stage ?? 0) >= SPACE_STAGES.length);
+  const missionWinner = game.victory.mission && alive.find(([, p]) => p.mission?.done);
+  const outcome = spaceWinner ? { winner: spaceWinner[0], reason: 'space' }
+    : missionWinner ? { winner: missionWinner[0], reason: 'mission' }
+    : checkVictory(game, table, now);
   if (!outcome) return null;
   game.phase = 'ended';
   game.armies = [];
@@ -897,7 +993,8 @@ export function releasePlayer(game, playerId) {
 export function visibleCountries(game, viewerId, now = Date.now()) {
   if (!game.fog || game.phase !== 'active' || !viewerId) return null;
   const viewer = game.players[viewerId];
-  if (!viewer || viewer.eliminated || viewer.space?.satellite) return null;
+  // El satélite espía de la carrera espacial lo ve todo.
+  if (!viewer || viewer.eliminated || (viewer.space?.stage ?? 0) >= 1) return null;
   const friends = new Set([viewerId]);
   for (const pid of Object.keys(game.players)) {
     if (pid !== viewerId && relationOf(game.relations, viewerId, pid).state === 'alliance') friends.add(pid);
@@ -936,6 +1033,22 @@ export function publicGame(game, viewerId = null, now = Date.now()) {
     presidents: Object.fromEntries(Object.entries(game.players).map(([id, p]) => [id, p.president])),
     victory: game.victory,
     result: game.result,
+    world: game.world ? {
+      events: game.world.events,
+      un: game.world.un,
+      active: game.world.active,
+      news: game.world.news.slice(-15),
+      session: game.world.session && {
+        ...game.world.session,
+        votes: undefined,
+        voted: Object.keys(game.world.session.votes), // quién ha votado (no qué)
+      },
+      sanctions: game.world.sanctions,
+      nukeBanUntil: game.world.nukeBanUntil,
+    } : null,
+    // La carrera espacial es pública; las misiones solo se revelan al cumplirlas.
+    space: Object.fromEntries(Object.entries(game.players).map(([id, p]) => [id, p.space?.stage ?? 0])),
+    missionsDone: Object.fromEntries(Object.entries(game.players).filter(([, p]) => p.mission?.done).map(([id, p]) => [id, p.mission])),
     eliminated: Object.fromEntries(Object.entries(game.players).map(([id, p]) => [id, p.eliminated])),
   };
 }
@@ -955,6 +1068,8 @@ export function privateGame(game, playerId) {
     eliminated: player.eliminated,
     president: player.president,
     weariness: Math.round((player.weariness ?? 0) * 100), // cansancio de guerra en %
+    mission: player.mission ? { ...player.mission, progress: missionProgress(game, playerId, missionCtx(game)) } : null,
+    vote: game.world?.session?.votes?.[playerId] ?? null,
     tech: player.tech,
     unlocked: player.unlocked,
     cooldowns: player.cooldowns,

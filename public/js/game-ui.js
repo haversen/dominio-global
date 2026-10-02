@@ -20,7 +20,7 @@ import {
 } from '/shared/military.js';
 import { RELATIONS, relationOf } from '/shared/diplomacy.js';
 import { techBonus, isUnlocked, treeBonus } from '/shared/tech.js';
-import { DiplomacyView, rankingTable } from './diplomacy-ui.js';
+import { DiplomacyView, rankingTable, setWorldNames } from './diplomacy-ui.js';
 import { VICTORY_REASONS } from '/shared/score.js';
 import { play } from './sound.js';
 
@@ -60,6 +60,7 @@ export function loadWorld() {
     .then((data) => {
       world = data;
       world.byId = new Map(data.countries.map((c) => [c.id, c]));
+      setWorldNames(world);
       return world;
     });
   return worldPromise;

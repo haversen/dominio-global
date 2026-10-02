@@ -22,6 +22,15 @@ const PACIFIC = list(`
   CHN JPN KOR PRK TWN PHL VNM LAO KHM THA MMR MYS BRN IDN TLS PNG AUS NZL SLB VUT FJI NCL MNG RUS
   USA CAN IND BGD LKA NPL BTN`);
 
+// Regiones para las misiones secretas («controla la mitad de...»).
+export const REGIONS = {
+  europe: { label: 'Europa', countries: EUROPE },
+  asia: { label: 'Asia', countries: ASIA },
+  americas: { label: 'América', countries: AMERICAS },
+  africa: { label: 'África', countries: AFRICA },
+  mideast: { label: 'Oriente Medio', countries: MIDDLE_EAST },
+};
+
 export const SCENARIOS = {
   world: {
     label: '🌍 Mundo entero',

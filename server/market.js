@@ -7,6 +7,9 @@ import {
 } from '../shared/market.js';
 import { leaderBonus } from '../shared/leaders.js';
 import { relationOf } from './diplomacy.js';
+import { isSanctioned } from './world.js';
+
+const SANCTIONED = 'La ONU te ha sancionado: no puedes usar el mercado por ahora';
 
 export function createMarket(now) {
   return {
@@ -27,6 +30,7 @@ export function trade(game, playerId, good, side, amount) {
   if (game.phase !== 'active') return { error: 'La partida todavía no está en marcha' };
   const player = activePlayer(game, playerId);
   if (!player) return { error: 'Jugador no válido' };
+  if (isSanctioned(game, playerId, game.lastTick)) return { error: SANCTIONED };
   const error = tradeError(good, side, amount);
   if (error) return { error };
 
@@ -58,6 +62,7 @@ export function postOffer(game, playerId, rawGive, rawWant, now = Date.now()) {
   if (game.phase !== 'active') return { error: 'La partida todavía no está en marcha' };
   const player = activePlayer(game, playerId);
   if (!player) return { error: 'Jugador no válido' };
+  if (isSanctioned(game, playerId, game.lastTick)) return { error: SANCTIONED };
   const give = parseSide(rawGive);
   const want = parseSide(rawWant);
   if (!give || !want) return { error: `Las cantidades deben ser de 1 a ${MAX_OFFER_AMOUNT}` };
@@ -80,6 +85,7 @@ export function acceptOffer(game, playerId, offerId) {
   const offer = game.market.offers.find((o) => o.id === offerId);
   if (!offer) return { error: 'Esa oferta ya no está disponible' };
   if (offer.from === playerId) return { error: 'No puedes aceptar tu propia oferta' };
+  if (isSanctioned(game, playerId, game.lastTick)) return { error: SANCTIONED };
   if (relationOf(game.relations, playerId, offer.from).state === 'war') {
     return { error: 'No se puede comerciar con un jugador con el que estás en guerra' };
   }

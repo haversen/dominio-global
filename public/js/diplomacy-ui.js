@@ -12,6 +12,10 @@ import { UNITS, WEAPONS } from '/shared/military.js';
 import { RESOURCES, RESOURCE_INFO, canAfford } from '/shared/economy.js';
 import { play } from './sound.js';
 import {
+  WORLD_EVENTS, UN_RESOLUTIONS, MISSIONS, SPACE_STAGES, fill as fillText,
+} from '/shared/world.js';
+import { REGIONS } from '/shared/scenarios.js';
+import {
   MARKET_GOODS, MARKET_FEE, MAX_TRADE, MAX_OFFER_AMOUNT, MAX_OFFERS_PER_PLAYER, BASE_PRICES, quote,
 } from '/shared/market.js';
 
@@ -59,6 +63,18 @@ function sparkline(values, base) {
   return svg;
 }
 
+// Titular con los nombres de jugadores y países ya puestos.
+function newsText(n, players) {
+  const v = n.vars ?? {};
+  const pname = (id) => players.get(id)?.name ?? 'un jugador';
+  return fillText(n.text, {
+    player: pname(v.player), target: pname(v.target), a: pname(v.a), b: pname(v.b),
+    country: v.country ? worldNames.get(v.country) ?? v.country : 'un país',
+  });
+}
+let worldNames = new Map();
+export const setWorldNames = (world) => { worldNames = new Map(world.countries.map((c) => [c.id, c.name])); };
+
 const resourcesText = (obj) => Object.entries(obj ?? {}).filter(([, v]) => v)
   .map(([r, v]) => `${fmt.format(v)} ${RESOURCE_INFO[r].icon}`).join(' + ') || 'nada';
 
@@ -82,6 +98,7 @@ export class DiplomacyView {
     $('#btn-diplomacy').addEventListener('click', () => this.open('diplomacy'));
     $('#btn-tech').addEventListener('click', () => this.open('tech'));
     $('#btn-market').addEventListener('click', () => this.open('market'));
+    $('#btn-world').addEventListener('click', () => this.open('world'));
     $('#btn-ranking').addEventListener('click', () => this.open('ranking'));
     $('#modal-close').addEventListener('click', () => this.close());
     $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') this.close(); });
@@ -132,6 +149,7 @@ export class DiplomacyView {
     this.lastTech = null;
     this.lastUnlocked = null;
     this.seenOffers = null;
+    this.seenNews = null;
     this.dms = [];
     this.unread = {};
   }
@@ -190,6 +208,18 @@ export class DiplomacyView {
     }
     this.lastUnlocked = [...(self.unlocked ?? [])];
 
+    // Titulares nuevos del Diario Global.
+    const news = this.getCtx()?.game.world?.news ?? [];
+    const lastNews = news.length ? news[news.length - 1].id : 0;
+    if (this.seenNews !== undefined && this.seenNews !== null) {
+      for (const n of news) {
+        if (n.id <= this.seenNews) continue;
+        toast(`📰 ${n.icon} ${n.headline} — ${newsText(n, players)}`, 'news', 8000);
+        play('notify');
+      }
+    }
+    this.seenNews = lastNews;
+
     const offers = (this.getCtx()?.game.market?.offers ?? []).filter((o) => o.from !== me);
     if (this.seenOffers) {
       for (const o of offers) {
@@ -201,6 +231,13 @@ export class DiplomacyView {
   }
 
   #renderButtons({ self, me, game }) {
+    // 🌐 Mundo: avisa si hay una votación abierta en la que todavía no has votado.
+    const session = game.world?.session;
+    const pendingVote = session && !session.voted?.includes(me) && !game.eliminated?.[me] ? 1 : 0;
+    const worldCount = $('#world-count');
+    worldCount.textContent = '🗳';
+    worldCount.classList.toggle('hidden', !pendingVote);
+
     const offers = (game.market?.offers ?? []).filter((o) => o.from !== me).length;
     const marketCount = $('#market-count');
     marketCount.textContent = offers;
@@ -260,6 +297,7 @@ export class DiplomacyView {
     const body = $('#modal-body');
     if (this.tab === 'tech') return fill(body, this.#techView(ctx));
     if (this.tab === 'market') return fill(body, this.#marketView(ctx));
+    if (this.tab === 'world') return fill(body, this.#worldView(ctx));
     if (this.tab === 'ranking') return fill(body, rankingView(ctx, this.serverNow()));
     if (this.tradeWith) return fill(body, this.#tradeForm(ctx));
     if (this.dmWith) return fill(body, this.#dmView(ctx));
@@ -449,6 +487,89 @@ export class DiplomacyView {
     ];
   }
 
+  // ---------- Mundo: ONU, noticias, eventos y misión secreta ----------
+
+  #worldView(ctx) {
+    const { game, players, me, self } = ctx;
+    const w = game.world;
+    const now = this.serverNow();
+    const name = (id) => players.get(id)?.name ?? 'un jugador';
+    const sections = [];
+
+    // Votación de la ONU
+    if (w?.un) {
+      const s = w.session;
+      let body;
+      if (s) {
+        const spec = UN_RESOLUTIONS[s.type];
+        const vars = { target: name(s.target), a: name(s.a), b: name(s.b) };
+        const myVote = self.vote;
+        const vote = (v) => async () => {
+          const res = await request('un:vote', { vote: v });
+          if (!res.ok) return toast(res.error, 'error');
+          toast(v === 'yes' ? '🇺🇳 Has votado a favor' : '🇺🇳 Has votado en contra', 'success');
+        };
+        body = h('div', { class: 'un-session' },
+          h('div', { class: 'un-title' }, h('span', {}, spec.icon), h('strong', {}, fillText(spec.title, vars)),
+            h('b', { class: 'proposal-timer' }, clock(s.endsAt - now))),
+          h('p', { class: 'muted small' }, fillText(spec.text, vars)),
+          h('p', { class: 'small' }, `Han votado: ${s.voted.length ? s.voted.map(name).join(', ') : 'nadie todavía'}. Cada voto pesa tantos países como controle quien vota.`),
+          !game.eliminated?.[me] && h('div', { class: 'un-votes' },
+            h('button', { class: `btn ${myVote === 'yes' ? 'btn-primary' : ''}`, onClick: vote('yes') }, '👍 A favor'),
+            h('button', { class: `btn ${myVote === 'no' ? 'btn-danger' : ''}`, onClick: vote('no') }, '👎 En contra')));
+      } else {
+        body = h('p', { class: 'muted small' }, 'No hay ninguna votación abierta. La Asamblea se reúne cada pocos minutos: sanciones, altos el fuego, ayuda humanitaria o prohibir las nucleares.');
+      }
+      const sanctioned = Object.entries(w.sanctions ?? {}).filter(([, until]) => until > now);
+      sections.push(h('section', { class: 'modal-section' },
+        h('h4', { class: 'panel-sub' }, '🇺🇳 Naciones Unidas'),
+        body,
+        sanctioned.length > 0 && h('p', { class: 'small danger-text' }, `🚫 Sancionados: ${sanctioned.map(([id, until]) => `${name(id)} (${clock(until - now)})`).join(', ')}`),
+        w.nukeBanUntil > now && h('p', { class: 'small' }, `☢️ Armas nucleares prohibidas durante ${clock(w.nukeBanUntil - now)}`)));
+    }
+
+    // Misión secreta
+    if (self.mission) {
+      const m = self.mission;
+      const text = fillText(MISSIONS[m.type].text, { region: m.region ? REGIONS[m.region].label : '', target: name(m.target) });
+      const p = m.progress;
+      sections.push(h('section', { class: 'modal-section' },
+        h('h4', { class: 'panel-sub' }, '🎯 Tu misión secreta'),
+        h('div', { class: `mission${m.done ? ' done' : ''}` },
+          h('strong', {}, `${MISSIONS[m.type].icon} ${text}`),
+          p && h('div', { class: 'progress' },
+            h('div', { class: 'progress-bar', style: { width: `${Math.min(100, (p.have / p.need) * 100)}%` } }),
+            h('span', {}, m.done ? '✓ Cumplida' : `${p.have} / ${p.need}`)),
+          h('small', { class: 'muted' }, game.victory?.mission
+            ? 'Si la cumples, ganas la partida. Nadie más sabe cuál es.'
+            : 'Si la cumples, ganas 250 puntos y se revela a todos. Nadie más sabe cuál es.'))));
+    }
+
+    // Eventos en curso
+    const active = (w?.active ?? []).filter((e) => e.until > now);
+    if (active.length) {
+      sections.push(h('section', { class: 'modal-section' },
+        h('h4', { class: 'panel-sub' }, '🌍 Eventos en curso'),
+        active.map((e) => h('p', { class: 'small world-event' },
+          `${WORLD_EVENTS[e.type].icon} ${WORLD_EVENTS[e.type].headline} · ${clock(e.until - now)} — ${WORLD_EVENTS[e.type].text}`))));
+    }
+
+    // Diario Global
+    const news = [...(w?.news ?? [])].reverse();
+    sections.push(h('section', { class: 'modal-section newspaper' },
+      h('header', { class: 'newspaper-head' },
+        h('span', { class: 'newspaper-name' }, 'EL DIARIO GLOBAL'),
+        h('small', {}, 'Edición especial · noticias del mundo en guerra')),
+      news.length ? news.map((n) => h('article', { class: 'news-item' },
+        h('h5', {}, `${n.icon} ${n.headline}`),
+        h('p', {}, newsText(n, players)),
+        h('time', {}, new Date(n.ts).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }))))
+        : h('p', { class: 'muted small' }, game.world?.events
+          ? 'Todavía no hay noticias. Los eventos mundiales llegan cada pocos minutos.'
+          : 'Los eventos mundiales están desactivados en esta partida.')));
+    return sections;
+  }
+
   // ---------- Mercado ----------
 
   #marketView(ctx) {
@@ -623,7 +744,8 @@ export class DiplomacyView {
 
   // ---------- Tecnología (árbol estilo War Thunder) ----------
 
-  #techView({ self, game }) {
+  #techView(ctx) {
+    const { self, game } = ctx;
     const now = this.serverNow();
     const busy = Object.keys(self.research ?? {}).length;
     return [
@@ -634,10 +756,52 @@ export class DiplomacyView {
         h('div', { class: 'wt-ranks' }, h('div', { class: 'wt-head-spacer' }),
           Array.from({ length: MAX_RANK }, (_, i) => h('div', { class: 'wt-rank' }, `Rango ${ROMAN[i + 1]}`))),
         TREE_BRANCHES.map((branch) => this.#branchColumn(branch, self, game, now))),
+      this.#spaceView(ctx, now),
       h('h4', { class: 'panel-sub' }, `${DOCTRINE_BRANCH.icon} Doctrinas`),
       this.#slotStatus(self.research?.[DOCTRINE_BRANCH.id], game, now, self),
       this.#doctrines(self, game, now),
     ];
+  }
+
+  // Carrera espacial: satélite, estación y Luna (con su propio hueco de investigación).
+  #spaceView({ self, game, players, me }, now) {
+    const stage = game.space?.[me] ?? 0;
+    const r = self.research?.space;
+    const rivals = Object.entries(game.space ?? {}).filter(([id, st]) => st > 0 && id !== me);
+    return h('section', { class: 'modal-section' },
+      h('h4', { class: 'panel-sub' }, '🚀 Carrera espacial'),
+      h('div', { class: 'space-stages' }, SPACE_STAGES.map((st, i) => {
+        const done = stage > i;
+        const current = stage === i;
+        let action = null;
+        if (done) action = h('span', { class: 'tree-done' }, '✓ Completado');
+        else if (current && r) {
+          const total = (st.ms * leaderBonus(self.president).researchMs * (stage >= 2 ? 0.8 : 1)) / game.speed;
+          const left = r.readyAt - now;
+          action = h('div', { class: 'progress' },
+            h('div', { class: 'progress-bar', style: { width: `${Math.min(100, (1 - left / total) * 100)}%` } }),
+            h('span', {}, clock(left)));
+        } else if (current) {
+          const missingReq = st.requires.some((id) => !self.unlocked?.includes(id));
+          action = h('button', {
+            class: 'btn btn-xs btn-block',
+            disabled: missingReq || !canAfford(self.resources, st.cost),
+            title: missingReq ? 'Requiere Bombarderos (Aviación II) y Misil balístico (Bombas II)' : '',
+            onClick: async () => {
+              const res = await request('game:space');
+              if (!res.ok) return toast(res.error, 'error');
+              toast(`🚀 Programa espacial: ${st.label} en marcha`, 'success');
+            },
+          }, `Lanzar · ${clock((st.ms * leaderBonus(self.president).researchMs * (stage >= 2 ? 0.8 : 1)) / game.speed)}`);
+        }
+        return h('div', { class: `tree-node space-node${done ? ' done' : ''}${current && r ? ' active' : ''}${!done && !current ? ' locked' : ''}` },
+          h('div', { class: 'tree-name' }, h('span', { class: 'tech-icon' }, st.icon), h('strong', {}, st.label)),
+          h('small', { class: 'muted' }, st.effect),
+          !done && h('small', { class: 'tree-cost' }, resourcesText(st.cost)),
+          action);
+      })),
+      h('p', { class: 'muted small' }, `${stage === 0 ? 'Requiere bombarderos (Aviación II) y misil balístico (Bombas II). ' : ''}La Luna exige controlar al menos 6 países. ${game.victory?.space ? 'Quien llegue primero gana la partida.' : 'Llegar a la Luna da 500 puntos.'}`),
+      rivals.length > 0 && h('p', { class: 'small' }, `Rivales: ${rivals.map(([id, st]) => `${players.get(id)?.name ?? '?'} ${SPACE_STAGES[st - 1].icon}`).join(' · ')}`));
   }
 
   // Estado del hueco de investigación de una rama.

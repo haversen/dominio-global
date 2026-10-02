@@ -4,6 +4,8 @@ export const VICTORY_REASONS = {
   domination: 'por dominación mundial',
   lastStanding: 'por ser el último en pie',
   time: 'por puntuación al acabar el tiempo',
+  space: 'con la victoria científica: ¡ha llegado a la Luna!',
+  mission: 'al cumplir su misión secreta',
   defeat: 'Las fuerzas neutrales han derrotado a todos los jugadores',
 };
 

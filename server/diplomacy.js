@@ -13,7 +13,7 @@ function activePlayer(game, id) {
   return p && !p.eliminated ? p : null;
 }
 
-function setRelation(game, a, b, state, until = null) {
+export function setRelation(game, a, b, state, until = null) {
   if (state === 'peace') delete game.relations[pairKey(a, b)];
   else game.relations[pairKey(a, b)] = until ? { state, until } : { state };
 }

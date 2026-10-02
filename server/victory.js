@@ -5,6 +5,7 @@ import { totalUnits } from '../shared/military.js';
 import { TECH_TYPES, startingUnlocks } from '../shared/tech.js';
 import { scoreOf } from '../shared/score.js';
 import { usedSlots } from '../shared/buildings.js';
+import { MISSION_BONUS, SPACE_BONUS } from '../shared/world.js';
 
 const FREE_NODES = startingUnlocks().length;
 
@@ -24,6 +25,8 @@ export function standings(game, areaOf, totalArea) {
       techLevels: TECH_TYPES.reduce((s, t) => s + (p.tech?.[t] ?? 0), 0) + Math.max(0, (p.unlocked?.length ?? 0) - FREE_NODES),
       resources: RESOURCES.reduce((s, r) => s + p.resources[r], 0),
       stats: p.stats,
+      // Bonificaciones: misión secreta cumplida y etapas de la carrera espacial.
+      bonus: (p.mission?.done ? MISSION_BONUS : 0) + SPACE_BONUS[p.space?.stage ?? 0],
     };
   }
   for (const [id, c] of Object.entries(game.countries)) {
@@ -46,7 +49,7 @@ export function standings(game, areaOf, totalArea) {
       units: r.units,
       techLevels: r.techLevels,
       stats: r.stats,
-      score: scoreOf({ ...r, areaPct, resources: r.resources }),
+      score: scoreOf({ ...r, areaPct, resources: r.resources }) + r.bonus,
     };
   }).sort((a, b) => Number(a.eliminated) - Number(b.eliminated) || b.score - a.score);
 }
