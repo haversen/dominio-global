@@ -25,6 +25,10 @@ const TERRAIN_SYMBOLS = { mountains: 'mountains', jungle: 'trees', taiga: 'trees
 const VISUAL_TERRAIN = { RUS: 'taiga', CAN: 'taiga' };
 const OFFMAP_FILL = '#9a968a';
 const OWNER_MIX = 0.55; // cuánto color del dueño se mezcla con el terreno
+// Por debajo de este zoom se dibujan los contornos simplificados (mucho más rápidos de pintar).
+const DETAIL_ZOOM = 2.2;
+const DETAIL_ZOOM_LOW_GFX = 6;
+const LOW_GFX_KEY = 'dg.lowGfx';
 
 function svg(tag, attrs = {}) {
   const el = document.createElementNS(SVG_NS, tag);
@@ -160,7 +164,17 @@ export class WorldMap {
     this.frame = null;
     this.animation = null;
 
+    this.lowGfx = (() => {
+      try {
+        const saved = localStorage.getItem(LOW_GFX_KEY);
+        if (saved !== null) return saved === '1';
+      } catch { /* sin almacenamiento */ }
+      // Por defecto, gráficos ligeros en móviles con poca memoria o pocos núcleos.
+      return Boolean(navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency ?? 8) <= 2;
+    })();
+    this.detail = 'high';
     this.#build();
+    this.setLowGraphics(this.lowGfx);
     this.#bindMap();
     this.#bindMinimap();
     new ResizeObserver(() => this.#resize()).observe(svgEl);
@@ -198,15 +212,23 @@ export class WorldMap {
       defs.append(pattern);
     }
     defs.append(...symbolPatterns());
+    // Cada trazado guarda sus dos versiones: detallada (d) y simplificada (ds).
+    this.detailed = []; // [{ el, d, ds }]
+    const both = (el, d, ds) => {
+      this.detailed.push({ el, d, ds: ds || d });
+      return el;
+    };
     const landD = world.countries.map((c) => c.d).join('');
+    const landDs = world.countries.map((c) => c.ds || c.d).join('');
     // Un trazado por tipo de terreno para dibujar encima sus símbolos (montañas, árboles, dunas).
     const symbolLayers = Object.entries(TERRAIN_SYMBOLS).map(([terrain, pattern]) => {
-      const d = world.countries.filter((c) => visualTerrain(c.id) === terrain).map((c) => c.d).join('');
-      return d ? svg('path', { d, class: `terrain-symbols sym-${terrain}`, fill: `url(#${pattern})` }) : null;
+      const list = world.countries.filter((c) => visualTerrain(c.id) === terrain);
+      const d = list.map((c) => c.d).join('');
+      return d ? both(svg('path', { d, class: `terrain-symbols sym-${terrain}`, fill: `url(#${pattern})` }), d, list.map((c) => c.ds).join('')) : null;
     }).filter(Boolean);
 
     for (const c of world.countries) {
-      const path = svg('path', { d: c.d, class: 'country', id: `c-${c.id}`, 'data-id': c.id, fill: neutralFill(c.id) });
+      const path = both(svg('path', { d: c.d, class: 'country', id: `c-${c.id}`, 'data-id': c.id, fill: neutralFill(c.id) }), c.d, c.ds);
       countries.append(path);
       this.paths.set(c.id, path);
 
@@ -231,10 +253,10 @@ export class WorldMap {
       svg('path', { d: world.sphere, class: 'sphere' }),
       svg('path', { d: world.sphere, class: 'sea-waves' }),
       svg('path', { d: world.graticule, class: 'graticule' }),
-      svg('path', { d: landD, class: 'coast-halo wide' }),
-      svg('path', { d: landD, class: 'coast-halo' }),
+      both(svg('path', { d: landD, class: 'coast-halo wide' }), landD, landDs),
+      both(svg('path', { d: landD, class: 'coast-halo' }), landD, landDs),
       countries,
-      ...(relief ? [svg('path', { d: landD, class: 'relief' })] : []),
+      ...(relief ? [both(svg('path', { d: landD, class: 'relief' }), landD, landDs)] : []),
       ...symbolLayers,
       this.hoverPath,
       this.selectPath,
@@ -511,7 +533,7 @@ export class WorldMap {
   select(id, { center = false } = {}) {
     this.selected = id && this.byId.has(id) ? id : null;
     const c = this.selected && this.byId.get(this.selected);
-    this.selectPath.setAttribute('d', c ? c.d : '');
+    this.selectPath.setAttribute('d', c ? this.#outline(c) : '');
     if (c && center) this.centerOn(id);
   }
 
@@ -535,6 +557,30 @@ export class WorldMap {
 
   get zoom() {
     return this.fit.w / this.view.w;
+  }
+
+  /** Gráficos ligeros: sin texturas ni símbolos y con contornos simples hasta acercarse mucho. */
+  setLowGraphics(on) {
+    this.lowGfx = Boolean(on);
+    try {
+      localStorage.setItem(LOW_GFX_KEY, this.lowGfx ? '1' : '0');
+    } catch { /* sin almacenamiento */ }
+    this.svgEl.classList.toggle('low-gfx', this.lowGfx);
+    this.#updateDetail(true);
+  }
+
+  #outline(c) {
+    return this.detail === 'low' ? c.ds || c.d : c.d;
+  }
+
+  // Cambia entre contornos simplificados y detallados según el zoom.
+  #updateDetail(force = false) {
+    const limit = this.lowGfx ? DETAIL_ZOOM_LOW_GFX : DETAIL_ZOOM;
+    const detail = this.zoom < limit ? 'low' : 'high';
+    if (detail === this.detail && !force) return;
+    this.detail = detail;
+    for (const { el, d, ds } of this.detailed) el.setAttribute('d', detail === 'low' ? ds : d);
+    if (this.selected) this.selectPath.setAttribute('d', this.#outline(this.byId.get(this.selected)));
   }
 
   // ---------- Vista ----------
@@ -600,6 +646,7 @@ export class WorldMap {
       }
     }
 
+    this.#updateDetail();
     this.viewportRect.setAttribute('x', x);
     this.viewportRect.setAttribute('y', y);
     this.viewportRect.setAttribute('width', w);
@@ -743,7 +790,7 @@ export class WorldMap {
     const id = e?.target.closest?.('.country')?.dataset.id ?? null;
     if (id !== this.hovered) {
       this.hovered = id;
-      this.hoverPath.setAttribute('d', id ? this.byId.get(id).d : '');
+      this.hoverPath.setAttribute('d', id ? this.#outline(this.byId.get(id)) : '');
     }
     if (!id || e.pointerType === 'touch') return this.#hideTooltip();
 

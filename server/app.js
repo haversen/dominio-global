@@ -2,6 +2,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
+import compression from 'compression';
 import { Server } from 'socket.io';
 import { RoomManager, GameError } from './rooms.js';
 import { AccountStore, AccountError } from './accounts.js';
@@ -28,6 +29,7 @@ export function createGameServer({
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
+  app.use(compression()); // el mapa (250 KB) viaja comprimido a una cuarta parte
   app.use((_req, res, next) => {
     res.set({
       'X-Content-Type-Options': 'nosniff',
@@ -66,6 +68,7 @@ export function createGameServer({
   const server = http.createServer(app);
   const io = new Server(server, {
     maxHttpBufferSize: 64 * 1024, // ningún mensaje del juego necesita más
+    perMessageDeflate: { threshold: 1024 }, // comprime los mensajes grandes (estado completo de la sala)
     pingInterval: 20_000,
     pingTimeout: 20_000,
   });

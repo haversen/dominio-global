@@ -1341,3 +1341,9 @@ button, a, .country { touch-action: manipulation; }
 /* Avisos al móvil */
 .btn-notify.on { border-color: var(--success); }
 .notify-menu { justify-self: center; }
+
+/* Gráficos ligeros (móviles lentos): sin texturas, símbolos, oleaje ni halos */
+.map.low-gfx .relief, .map.low-gfx .terrain-symbols, .map.low-gfx .sea-waves, .map.low-gfx .coast-halo.wide { display: none; }
+.map.low-gfx .army-trail, .map.low-gfx .army-disc { filter: none; }
+.map.low-gfx .country { transition: none; }
+#btn-gfx.on { border-color: var(--accent); color: var(--accent); }

@@ -93,6 +93,74 @@ const isCoastal = (g) => arcsOf(g).some((a) => arcUse.get(a) === 1);
 const projection = geoNaturalEarth1().fitExtent([[10, 10], [WIDTH - 10, HEIGHT - 10]], { type: 'Sphere' });
 const path = geoPath(projection).digits(1);
 
+// ---------- Contornos simplificados (para el zoom alejado y móviles lentos) ----------
+
+// Douglas-Peucker: quita los puntos que se desvían menos de `tol` unidades de la línea.
+function douglasPeucker(points, tol) {
+  if (points.length < 3) return points;
+  const keep = new Uint8Array(points.length);
+  keep[0] = keep[points.length - 1] = 1;
+  const stack = [[0, points.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const [ax, ay] = points[a];
+    const [bx, by] = points[b];
+    const len = Math.hypot(bx - ax, by - ay) || 1;
+    let max = 0;
+    let index = -1;
+    for (let i = a + 1; i < b; i++) {
+      const [px, py] = points[i];
+      const d = Math.abs((bx - ax) * (ay - py) - (ax - px) * (by - ay)) / len;
+      if (d > max) { max = d; index = i; }
+    }
+    if (max > tol && index > 0) {
+      keep[index] = 1;
+      stack.push([a, index], [index, b]);
+    }
+  }
+  return points.filter((_, i) => keep[i]);
+}
+
+// En un anillo cerrado el primer y el último punto pueden coincidir: Douglas-Peucker no tendría
+// línea de referencia, así que se parte por el punto más lejano y se simplifican las dos mitades.
+function simplifyRing(pts, tol) {
+  if (pts.length < 4) return pts;
+  const [fx, fy] = pts[0];
+  let far = 1;
+  for (let i = 1; i < pts.length; i++) {
+    if (Math.hypot(pts[i][0] - fx, pts[i][1] - fy) > Math.hypot(pts[far][0] - fx, pts[far][1] - fy)) far = i;
+  }
+  const a = douglasPeucker(pts.slice(0, far + 1), tol);
+  const b = douglasPeucker(pts.slice(far), tol);
+  return [...a, ...b.slice(1)];
+}
+
+const ringArea = (pts) => Math.abs(pts.reduce((s, [x, y], i) => {
+  const [nx, ny] = pts[(i + 1) % pts.length];
+  return s + x * ny - nx * y;
+}, 0)) / 2;
+
+// Simplifica el contorno ya proyectado y recortado por d3 (solo usa los comandos M, L y Z).
+function simplifiedPath(d, tol = 1.2, minArea = 6) {
+  const rings = [];
+  for (const part of d.split('M').filter(Boolean)) {
+    const closed = part.endsWith('Z');
+    const pts = part.replace(/Z$/, '').split('L').map((xy) => xy.split(',').map(Number));
+    rings.push({ pts, closed });
+  }
+  let out = '';
+  let biggest = null;
+  for (const ring of rings) {
+    const pts = simplifyRing(ring.pts, tol);
+    if (!biggest || ringArea(ring.pts) > ringArea(biggest)) biggest = pts;
+    if (ring.closed && (pts.length < 4 || ringArea(pts) < minArea)) continue;
+    out += `M${pts.map(([x, y]) => `${+x.toFixed(1)},${+y.toFixed(1)}`).join('L')}${ring.closed ? 'Z' : ''}`;
+  }
+  // Los países diminutos conservan al menos su anillo principal.
+  if (!out && biggest) out = `M${biggest.map(([x, y]) => `${+x.toFixed(1)},${+y.toFixed(1)}`).join('L')}Z`;
+  return out;
+}
+
 function identify(f) {
   if (f.id == null) return UNNAMED[f.properties.name];
   const id = countriesLib.numericToAlpha3(f.id);
@@ -132,6 +200,7 @@ geo.features.forEach((f, i) => {
     id,
     name,
     d: path(f),
+    ds: simplifiedPath(path(f)), // contorno simplificado
     cx: Math.round(cx * 10) / 10,
     cy: Math.round(cy * 10) / 10,
     lw: Math.round(x1 - x0), // ancho disponible para la etiqueta

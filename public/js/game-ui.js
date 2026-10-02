@@ -89,6 +89,12 @@ export class GameView {
     $('#btn-zoom-in').addEventListener('click', () => this.map?.zoomBy(1.6));
     $('#btn-zoom-out').addEventListener('click', () => this.map?.zoomBy(1 / 1.6));
     $('#btn-zoom-reset').addEventListener('click', () => this.map?.reset());
+    $('#btn-gfx').addEventListener('click', () => {
+      if (!this.map) return;
+      this.map.setLowGraphics(!this.map.lowGfx);
+      $('#btn-gfx').classList.toggle('on', this.map.lowGfx);
+      toast(this.map.lowGfx ? '⚡ Gráficos ligeros: el mapa irá más fluido' : '✨ Gráficos completos');
+    });
     $('#btn-zoom-home').addEventListener('click', () => {
       const ctx = this.#ctx();
       const target = ctx && (ctx.game.homes[ctx.me] ?? this.#myCountries(ctx)[0]);
@@ -124,6 +130,7 @@ export class GameView {
         onContext: (id) => this.#quickMove(id),
         tooltipText: (id) => this.#tooltip(id),
       });
+      $('#btn-gfx').classList.toggle('on', this.map.lowGfx);
     }
     this.render();
   }
