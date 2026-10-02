@@ -1,4 +1,4 @@
-import { SCENARIOS, SCENARIO_IDS, DEFAULT_SCENARIO } from './scenarios.js';
+import { SCENARIOS, SCENARIO_IDS, DEFAULT_SCENARIO, hasSpaceVictory } from './scenarios.js';
 import { TROOP_PACES, DEFAULT_PACE } from './military.js';
 
 // Ajustes de partida compartidos por servidor y cliente.
@@ -87,7 +87,7 @@ export const SETTINGS_SCHEMA = {
     default: true,
   },
   winSpace: {
-    label: 'Victoria científica (llegar a la Luna)',
+    label: 'Victoria científica (llegar a la Luna) · solo en la Guerra Fría',
     type: 'bool',
     default: true,
   },
@@ -142,7 +142,8 @@ export function applySettingsPatch(current, patch) {
     next[key] = value;
   }
 
-  if (!next.winDomination && !next.winLastStanding && !next.winTimeLimit && !next.winSpace && !next.winMission) {
+  const space = next.winSpace && hasSpaceVictory(next.mapScenario);
+  if (!next.winDomination && !next.winLastStanding && !next.winTimeLimit && !space && !next.winMission) {
     return { error: 'Debe haber al menos una condición de victoria activa' };
   }
   return { settings: next };

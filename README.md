@@ -116,6 +116,8 @@ En la sala se elige el ritmo:
 - **Mundo entero**, **solo Europa**, **solo Asia**, **solo América** y **solo África**.
 - Escenarios inspirados en guerras: **Gran Guerra (1914-1918)**, **Segunda Guerra Mundial**, **Guerra del Pacífico** y **Guerra Fría**. Tienen países protagonistas (⭐) que se reparten primero, y en los tres primeros se puede empezar al lado de otro jugador.
 - **🏛 Antigua Grecia (450 a. C.)**: un mapa propio con 44 polis, reinos y satrapías persas (Atenas, Esparta, Tebas, Corinto, Macedonia, Lidia…) recortados sobre la costa real del Egeo (`shared/ancient.js`, generado con `npm run build:greece`).
+- En la Antigua Grecia las tropas son de la época (`shared/eras.js`): hoplitas, falange, espartanos, caballería, carros, elefantes, arqueros, catapultas, balistas, trirremes, birremes y quinquerremes, con velocidades reales a pie, a caballo y a remo. Los materiales son dracmas, trigo, aceite y bronce; hay flechas incendiarias y fuego griego, pero no bomba nuclear ni carrera espacial.
+- La victoria científica (llegar a la Luna) solo existe en la **Guerra Fría**; en los demás mapas la Luna da puntos.
 - Los países neutrales (controlados por la IA) se pintan todos del mismo gris para distinguirlos de los jugadores.
 - Los países de fuera del mapa se ven apagados y no se pueden pisar ni bombardear. El % de dominación se mide sobre el mapa elegido (de Rusia, en Europa, solo cuenta su parte europea).
 

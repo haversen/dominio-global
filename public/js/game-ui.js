@@ -3,7 +3,8 @@
 import { WorldMap } from './map.js';
 import { $, h, toast, guardTaps, durationText, avatarEl } from './dom.js';
 import { leaderBonus, discountCost } from '/shared/leaders.js';
-import { inScenario, scenarioOf } from '/shared/scenarios.js';
+import { inScenario, scenarioOf, eraOf } from '/shared/scenarios.js';
+import { applyEra, weaponAllowed } from '/shared/eras.js';
 import { STRATEGIC, strategicOf, needOf, hasAccess } from '/shared/strategic.js';
 import { SPY_MISSIONS, SPY_MISSION_IDS } from '/shared/espionage.js';
 import {
@@ -171,6 +172,9 @@ export class GameView {
         this.scopeKey = scopeKey;
         const scenario = scenarioOf(game.scenario);
         const focusIds = (scenario.countries ?? []).filter((id) => !scenario.areas?.[id]);
+        // Tropas, materiales y tecnología con los nombres de la época del mapa.
+        if (applyEra(eraOf(game.scenario))) this.#buildResourceBar();
+        this.map.setEra(eraOf(game.scenario));
         this.map.setScope((id) => playable(game, id), focusIds);
         if (game.phase === 'picking' || !game.homes[me]) this.map.showHome();
       }
@@ -673,14 +677,15 @@ export class GameView {
 
   // Bombas disponibles contra un país ajeno.
   #strikeSection(c, { game, me, self, players }, now) {
-    const weapons = WEAPON_TYPES.filter((w) => isUnlocked(self?.unlocked, { weapon: w }));
+    const era = eraOf(game.scenario);
+    const weapons = WEAPON_TYPES.filter((w) => isUnlocked(self?.unlocked, { weapon: w }) && weaponAllowed(w, era));
     if (!weapons.length) return null;
     const owner = game.countries[c.id].owner;
     const rel = owner ? relationOf(game.relations, me, owner).state : 'war';
     const hops = this.#hopsToMine(game, me, c.id);
 
     return h('div', {},
-      h('h4', { class: 'panel-sub' }, 'Bombardear'),
+      h('h4', { class: 'panel-sub' }, era ? 'Atacar a distancia' : 'Bombardear'),
       h('div', { class: 'recruit-list' }, weapons.map((w) => {
         const spec = WEAPONS[w];
         const cooldown = (self.cooldowns?.[w] ?? 0) - now;
@@ -801,7 +806,7 @@ export class GameView {
     }
     return h('div', { class: 'naval' },
       h('h4', { class: 'panel-sub' }, '🚢 Expedición naval'),
-      h('p', { class: 'muted small' }, 'Con al menos un barco en la expedición puedes llegar a cualquier país con costa del mundo, llevando también tropas y aviones. El desembarco cuenta como ataque anfibio.'),
+      h('p', { class: 'muted small' }, `Con al menos un barco en la expedición puedes llegar a cualquier país con costa del mapa, llevando también ${eraOf(game.scenario) ? 'tus tropas' : 'tropas y aviones'}. El desembarco cuenta como ataque anfibio.`),
       select,
       action);
   }
@@ -1119,7 +1124,6 @@ export class GameView {
     $('#resources').replaceChildren(...RESOURCES.map((r) => h('span', {
       class: `res res-${r}`,
       'data-res': r,
-      title: RESOURCE_INFO[r].label,
       title: RESOURCE_INFO[r].label,
     }, h('i', { class: 'res-icon' }, RESOURCE_INFO[r].icon), h('span', { class: 'res-label' }, RESOURCE_INFO[r].label), h('b', {}, '—'), h('em', {}))));
   }

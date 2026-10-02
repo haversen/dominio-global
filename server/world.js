@@ -7,6 +7,8 @@ import {
 import { NAP_DURATION_MS, pairKey, relationOf } from '../shared/diplomacy.js';
 import { addResources } from '../shared/economy.js';
 import { setRelation } from './diplomacy.js';
+import { eraOf } from '../shared/scenarios.js';
+import { eventSpec, weaponAllowed } from '../shared/eras.js';
 
 const NEWS_SIZE = 30;
 
@@ -71,7 +73,7 @@ export function tickWorld(game, now, rng, ctx) {
 
 function triggerEvent(game, now, rng, { playable, alivePlayers, ownedBy, isCapital }) {
   const type = WORLD_EVENT_IDS[Math.floor(rng() * WORLD_EVENT_IDS.length)];
-  const spec = WORLD_EVENTS[type];
+  const spec = eventSpec(type, eraOf(game.scenario));
   const pick = (list) => list[Math.floor(rng() * list.length)];
   const vars = {};
   const countries = Object.keys(game.countries).filter(playable);
@@ -160,7 +162,9 @@ function openSession(game, now, rng, { alivePlayers, standings }) {
   }
   // 4. Si no, ayuda al más débil o prohibir las nucleares.
   if (!resolution) {
-    resolution = rng() < 0.6 && table.length
+    // Sin armas nucleares en la época (antigua Grecia) no tiene sentido prohibirlas.
+    const nukes = weaponAllowed('nuke', eraOf(game.scenario));
+    resolution = (rng() < 0.6 || !nukes) && table.length
       ? { type: 'aid', target: table[table.length - 1].id }
       : { type: 'nukeBan' };
   }

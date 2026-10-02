@@ -73,6 +73,20 @@ export const UNITS = {
 };
 
 export const UNIT_TYPES = Object.keys(UNITS);
+
+// Velocidades reales (km/h) en los mapas de otra época: a pie, a caballo y a remo.
+// El mapa de la antigua Grecia es pequeño, así que los viajes duran parecido a los del mundo actual.
+const ERA_SPEEDS = {
+  greece: {
+    infantry: 5, mech: 5, specops: 6, tank: 12, heavytank: 10, mbt: 7,
+    aircraft: 5, bomber: 3, jet: 4, navy: 15, submarine: 13, carrier: 11,
+  },
+};
+
+/** Velocidad de una unidad (km/h) en la época de un mapa (o la normal). */
+export function unitSpeed(type, era = null) {
+  return ERA_SPEEDS[era]?.[type] ?? UNITS[type].speed;
+}
 export const BASE_UNITS = UNIT_TYPES.filter((t) => UNITS[t].tier === 1);
 
 // Qué recurso necesita cada clase para rendir al 100 %.
@@ -162,7 +176,9 @@ export function moveError(from, to, units) {
     return null;
   }
   if (domainCount(units, 'sea') > 0 && !to.coastal) return 'Los barcos no pueden entrar en un país sin costa';
-  if (from.sea.includes(to.id) && domainCount(units, 'land') > 0 && domainCount(units, 'sea') === 0) {
+  // En la Antigüedad nada vuela: arqueros y máquinas de asedio también necesitan barco.
+  const walkers = domainCount(units, 'land') + (from.era ? domainCount(units, 'air') : 0);
+  if (from.sea.includes(to.id) && walkers > 0 && domainCount(units, 'sea') === 0) {
     return 'Para cruzar el mar con tropas de tierra necesitas al menos un barco';
   }
   return null;
@@ -202,8 +218,8 @@ export function travelMs(from, to, units, speed = 1, speedMods = {}) {
   const bySea = from.sea.includes(to.id) || isNavalRoute(from, to);
   const ships = present.filter((t) => UNITS[t].domain === 'sea');
   if (bySea && ships.length) present = ships;
-  const kmh = (t) => UNITS[t].speed * (speedMods[UNITS[t].class] ?? 1);
-  const slowest = present.length ? Math.min(...present.map(kmh)) : UNITS.infantry.speed;
+  const kmh = (t) => unitSpeed(t, from.era) * (speedMods[UNITS[t].class] ?? 1);
+  const slowest = present.length ? Math.min(...present.map(kmh)) : unitSpeed('infantry', from.era);
   let hours = distanceKm(from, to) / slowest;
   if (from.sea.includes(to.id)) hours *= 1.3; // embarcar y desembarcar
   else if (isNavalRoute(from, to)) hours *= 1.4; // las rutas marítimas rodean continentes

@@ -46,7 +46,7 @@ export function hasAccess(type, owners, friends, inMap = () => true) {
   return sources.some((id) => friends.has(owners(id)));
 }
 
-export function missingText(type) {
-  const s = STRATEGIC[type];
+export function missingText(type, spec = STRATEGIC[type]) {
+  const s = spec;
   return `Necesitas ${s.icon} ${s.label.toLowerCase()}: controla un país que lo tenga (o alíate con quien lo controle)`;
 }

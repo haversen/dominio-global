@@ -7,7 +7,8 @@ import {
   UNITS, UNIT_TYPES, GAME_SPEEDS, emptyUnits, addUnits, totalUnits, neutralGarrison, startingArmy,
   moveError, travelMs, resolveBattle, terrainOf, WEAPONS, interceptChance, strikeDamage, paceScale, isNavalRoute,
 } from '../shared/military.js';
-import { SCENARIOS, DEFAULT_SCENARIO, scenarioOf, inScenario, scenarioArea } from '../shared/scenarios.js';
+import { SCENARIOS, DEFAULT_SCENARIO, scenarioOf, inScenario, scenarioArea, eraOf, hasSpaceVictory } from '../shared/scenarios.js';
+import { unitLabel, weaponLabel, weaponAllowed, spaceAllowed, strategicSpec } from '../shared/eras.js';
 import {
   TECHS, TECH_MAX_LEVEL, TECH_TREE, emptyTech, techCost, techMs, techBonus, startingUnlocks, isUnlocked,
   nodeError, treeBonus, DOCTRINE_BRANCH,
@@ -111,7 +112,8 @@ export function createGame(settings, playerIds, { now = Date.now(), rng = Math.r
       domination: settings.winDomination ? settings.dominationPercent : null,
       lastStanding: Boolean(settings.winLastStanding),
       timeLimitMs: settings.winTimeLimit ? settings.timeLimitMinutes * 60_000 : null,
-      space: settings.winSpace === true,
+      // La victoria científica solo existe en la Guerra Fría; en los demás mapas la Luna da puntos.
+      space: settings.winSpace === true && hasSpaceVictory(settings.mapScenario),
       mission: settings.winMission === true,
     },
     result: null,
@@ -246,7 +248,7 @@ export function strategicError(game, playerId, what) {
   const need = needOf(what);
   if (!need) return null;
   const ok = hasAccess(need, (id) => game.countries[id]?.owner, friendsOf(game, playerId), (id) => playable(game, id));
-  return ok ? null : missingText(need);
+  return ok ? null : missingText(need, strategicSpec(need, eraOf(game.scenario)));
 }
 
 function applyIncomeTech(game, playerId, raw) {
@@ -298,7 +300,7 @@ export function recruit(game, playerId, countryId, type, count, now = Date.now()
   const unit = UNITS[type];
   if (!unit) return 'Tipo de unidad desconocido';
   if (!isUnlocked(game.players[playerId].unlocked, { unit: type })) {
-    return `Primero tienes que investigar ${unit.label} en el árbol tecnológico`;
+    return `Primero tienes que investigar ${unitLabel(type, eraOf(game.scenario))} en el árbol tecnológico`;
   }
   if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH) return `Puedes reclutar de 1 a ${MAX_BATCH} unidades`;
   if (unit.domain === 'sea' && !COUNTRIES.get(countryId).coastal) return 'Los barcos solo se construyen en países con costa';
@@ -382,6 +384,7 @@ export function researchNode(game, playerId, nodeId, now = Date.now()) {
   const error = nodeError(player.unlocked, nodeId);
   if (error) return error;
   const node = TECH_TREE[nodeId];
+  if (node.unlocks?.weapon && !weaponAllowed(node.unlocks.weapon, eraOf(game.scenario))) return 'Eso no existe en esta época';
   normalizeResearch(player);
   if (player.research[node.branch]) return 'Ya estás investigando otra cosa en esta rama';
   if (!canAfford(player.resources, node.cost)) return 'No tienes recursos suficientes';
@@ -397,6 +400,7 @@ export function researchSpace(game, playerId, now = Date.now()) {
   if (game.phase !== 'active') return 'La partida todavía no está en marcha';
   const player = game.players[playerId];
   if (!player || player.eliminated) return 'Jugador no válido';
+  if (!spaceAllowed(eraOf(game.scenario))) return 'En esta época no existe la carrera espacial';
   normalizeResearch(player);
   player.space ??= { stage: 0 };
   const stage = SPACE_STAGES[player.space.stage];
@@ -460,7 +464,9 @@ export function launchStrike(game, playerId, weapon, targetId, now = Date.now())
   const spec = WEAPONS[weapon];
   if (!player || player.eliminated) return { error: 'Jugador no válido' };
   if (!spec) return { error: 'Arma desconocida' };
-  if (!isUnlocked(player.unlocked, { weapon })) return { error: `Primero tienes que investigar: ${spec.label}` };
+  const era = eraOf(game.scenario);
+  if (!weaponAllowed(weapon, era)) return { error: 'Esa arma no existe en esta época' };
+  if (!isUnlocked(player.unlocked, { weapon })) return { error: `Primero tienes que investigar: ${weaponLabel(weapon, era)}` };
   const target = game.countries[targetId];
   if (!target) return { error: 'Ese país no existe' };
   if (!playable(game, targetId)) return { error: 'Ese país no forma parte de este mapa' };
@@ -474,7 +480,7 @@ export function launchStrike(game, playerId, weapon, targetId, now = Date.now())
   const missing = strategicError(game, playerId, { weapon });
   if (missing) return { error: missing };
   const reach = hopsFromPlayer(game, playerId, spec.range).get(targetId);
-  if (!reach) return { error: `Fuera de alcance: ${spec.label} llega a ${spec.range} país(es) de distancia` };
+  if (!reach) return { error: `Fuera de alcance: ${weaponLabel(weapon, era)} llega a ${spec.range} país(es) de distancia` };
   if (!canAfford(player.resources, spec.cost)) return { error: 'No tienes recursos suficientes' };
 
   addResources(player.resources, spec.cost, -1);

@@ -172,7 +172,7 @@ test('misiones secretas: se reparten, se cumplen y dan puntos o la victoria', ()
 });
 
 test('carrera espacial: satélite (ve a través de la niebla), estación y Luna', () => {
-  const g = game({ winSpace: true, fogOfWar: true });
+  const g = game({ winSpace: true, fogOfWar: true, mapScenario: 'coldwar' });
   assert.match(researchSpace(g, 'a', T0), /bombarderos/);
   g.players.a.unlocked.push('air2', 'bomb1', 'bomb2');
   assert.equal(researchSpace(g, 'a', T0), null);

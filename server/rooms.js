@@ -8,10 +8,10 @@ import {
 } from './game.js';
 import { trade, postOffer, acceptOffer, cancelOffer } from './market.js';
 import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, DEFAULT_PRESIDENT } from '../shared/leaders.js';
-import { inScenario, scenarioOf, REGIONS } from '../shared/scenarios.js';
+import { inScenario, scenarioOf, REGIONS, eraOf } from '../shared/scenarios.js';
+import { weaponLabel, weaponIcon } from '../shared/eras.js';
 import { UN_RESOLUTIONS, MISSIONS, SPACE_STAGES, fill } from '../shared/world.js';
 import { makeBot, runBots } from './bots.js';
-import { WEAPONS } from '../shared/military.js';
 import { pairKey } from '../shared/diplomacy.js';
 import { VICTORY_REASONS } from '../shared/score.js';
 import { declareWar, propose, respond, cancelProposal } from './diplomacy.js';
@@ -879,11 +879,12 @@ export class RoomManager {
       return;
     }
     if (event.type === 'strike') {
-      const spec = WEAPONS[event.weapon];
+      const era = eraOf(room.game?.scenario);
+      const label = weaponLabel(event.weapon, era).toLowerCase();
       const target = COUNTRIES.get(event.country).name;
       this.#system(room, event.intercepted
-        ? `🛡 Las defensas de ${target} interceptan un ${spec.label.toLowerCase()} de ${name(event.attacker)}`
-        : `${spec.icon} ${name(event.attacker)} alcanza ${target} con: ${spec.label.toLowerCase()}`);
+        ? `🛡 Las defensas de ${target} detienen un ataque (${label}) de ${name(event.attacker)}`
+        : `${weaponIcon(event.weapon, era)} ${name(event.attacker)} alcanza ${target} con: ${label}`);
       return;
     }
     if (event.type !== 'battle') return; // p. ej. investigación: es privada

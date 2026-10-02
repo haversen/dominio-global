@@ -8,13 +8,14 @@ import {
   TECHS, TECH_TYPES, TECH_MAX_LEVEL, techCost, techMs, TECH_TREE, TREE_NODES, TREE_BRANCHES, nodeError,
   DOCTRINE_BRANCH, MAX_RANK,
 } from '/shared/tech.js';
-import { UNITS, WEAPONS } from '/shared/military.js';
+import { UNITS, WEAPONS, unitSpeed } from '/shared/military.js';
 import { RESOURCES, RESOURCE_INFO, canAfford } from '/shared/economy.js';
 import { play } from './sound.js';
 import {
   WORLD_EVENTS, UN_RESOLUTIONS, MISSIONS, SPACE_STAGES, fill as fillText,
 } from '/shared/world.js';
-import { REGIONS } from '/shared/scenarios.js';
+import { REGIONS, eraOf } from '/shared/scenarios.js';
+import { weaponAllowed, spaceAllowed } from '/shared/eras.js';
 import {
   MARKET_GOODS, MARKET_FEE, MAX_TRADE, MAX_OFFER_AMOUNT, MAX_OFFERS_PER_PLAYER, BASE_PRICES, quote,
 } from '/shared/market.js';
@@ -756,8 +757,8 @@ export class DiplomacyView {
         h('div', { class: 'wt-ranks' }, h('div', { class: 'wt-head-spacer' }),
           Array.from({ length: MAX_RANK }, (_, i) => h('div', { class: 'wt-rank' }, `Rango ${ROMAN[i + 1]}`))),
         TREE_BRANCHES.map((branch) => this.#branchColumn(branch, self, game, now))),
-      this.#spaceView(ctx, now),
-      h('h4', { class: 'panel-sub' }, `${DOCTRINE_BRANCH.icon} Doctrinas`),
+      spaceAllowed(eraOf(ctx.game.scenario)) && this.#spaceView(ctx, now),
+      h('h4', { class: 'panel-sub' }, `${DOCTRINE_BRANCH.icon} ${DOCTRINE_BRANCH.label}`),
       this.#slotStatus(self.research?.[DOCTRINE_BRANCH.id], game, now, self),
       this.#doctrines(self, game, now),
     ];
@@ -817,7 +818,10 @@ export class DiplomacyView {
   }
 
   #branchColumn(branch, self, game, now) {
-    const nodes = TREE_NODES.filter((id) => TECH_TREE[id].branch === branch.id);
+    // Lo que no existe en la época del mapa (la bomba nuclear en la antigua Grecia) no aparece.
+    const era = eraOf(game.scenario);
+    const nodes = TREE_NODES.filter((id) => TECH_TREE[id].branch === branch.id
+      && (!TECH_TREE[id].unlocks?.weapon || weaponAllowed(TECH_TREE[id].unlocks.weapon, era)));
     const done = nodes.filter((id) => self.unlocked?.includes(id)).length;
     return h('div', { class: 'wt-col' },
       h('div', { class: 'wt-head' },
@@ -847,7 +851,7 @@ export class DiplomacyView {
 
     let detail;
     if (isMod) detail = node.desc;
-    else if (node.unlocks.unit) detail = `⚔ ${info.attack} · 🛡 ${info.defense} · ➤ ${info.speed} km/h`;
+    else if (node.unlocks.unit) detail = `⚔ ${info.attack} · 🛡 ${info.defense} · ➤ ${unitSpeed(node.unlocks.unit, eraOf(game.scenario))} km/h`;
     else detail = `alcance ${info.range} · destruye ${Math.round(info.kill * 100)} %`;
 
     let action;

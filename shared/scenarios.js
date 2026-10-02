@@ -89,11 +89,13 @@ export const SCENARIOS = {
     description: 'Dos superpotencias y sus bloques se disputan el mundo.',
     countries: null,
     featured: ['USA', 'RUS', 'CHN', 'GBR', 'FRA', 'DEU', 'CUB', 'VNM'],
+    spaceVictory: true, // el único mapa donde llegar a la Luna gana la partida
   },
   greece: {
     label: '🏛 Antigua Grecia (450 a. C.)',
     description: 'Polis griegas, reinos de los Balcanes y satrapías persas en torno al mar Egeo.',
     countries: ANCIENT_IDS,
+    era: 'greece', // tropas, materiales y tecnología de la época (shared/eras.js)
     featured: ['G_ATE', 'G_ESP', 'G_MAC', 'G_LID', 'G_TEB', 'G_COR', 'G_BIZ', 'G_ARG'],
     allowNeighbors: true,
   },
@@ -104,6 +106,9 @@ export const DEFAULT_SCENARIO = 'world';
 const sets = new Map(SCENARIO_IDS.map((id) => [id, SCENARIOS[id].countries ? new Set(SCENARIOS[id].countries) : null]));
 
 export const scenarioOf = (id) => SCENARIOS[id] ?? SCENARIOS[DEFAULT_SCENARIO];
+export const eraOf = (id) => scenarioOf(id).era ?? null;
+/** ¿Se puede ganar llegando a la Luna en este mapa? (solo en la Guerra Fría) */
+export const hasSpaceVictory = (id) => scenarioOf(id).spaceVictory === true;
 
 /** ¿Se juega este país en el mapa elegido? */
 export function inScenario(scenarioId, countryId) {

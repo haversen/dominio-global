@@ -4,6 +4,7 @@
 import { terrainOf, UNITS, UNIT_TYPES } from '/shared/military.js';
 import { STRATEGIC, strategicOf } from '/shared/strategic.js';
 import { REPLACED_BY_ANCIENT } from '/shared/ancient.js';
+import { strategicSpec } from '/shared/eras.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MAX_ZOOM = 14;
@@ -134,16 +135,22 @@ function symbolPatterns() {
   ];
 }
 
+// Iconos de los ejércitos en marcha en los mapas de otra época.
+const ERA_ARMY_ICONS = { greece: { sea: '⛵', air: '🏹', armor: '🐎', infantry: '🛡️' } };
+
 // Tipo de icono de un ejército en marcha según sus unidades.
-function armyIcon(a) {
+function armyIcon(a, era = null) {
   if (a.kind === 'strike') return { kind: 'strike', text: a.count };
   const units = a.units ?? {};
   const by = (pred) => UNIT_TYPES.filter((t) => pred(UNITS[t])).reduce((n, t) => n + (units[t] ?? 0), 0);
   const total = by(() => true) || 1;
-  if (by((u) => u.domain === 'sea') > 0 && a.sea) return { kind: 'sea', text: '🚢' };
-  if (by((u) => u.domain === 'air') === total) return { kind: 'air', text: '✈️' };
-  if (by((u) => u.class === 'armor') > 0) return { kind: 'armor' };
-  return { kind: 'infantry', text: '🪖' };
+  const icons = ERA_ARMY_ICONS[era];
+  const kind = by((u) => u.domain === 'sea') > 0 && a.sea ? 'sea'
+    : by((u) => u.domain === 'air') === total ? 'air'
+      : by((u) => u.class === 'armor') > 0 ? 'armor' : 'infantry';
+  if (icons) return { kind, text: icons[kind] };
+  if (kind === 'armor') return { kind }; // silueta de tanque
+  return { kind, text: { sea: '🚢', air: '✈️', infantry: '🪖' }[kind] };
 }
 
 export class WorldMap {
@@ -251,7 +258,7 @@ export class WorldMap {
       const strategic = strategicOf(c.id);
       if (strategic.length) {
         const icons = svg('tspan', { x: c.cx, dy: '1.25em', class: 'label-res' });
-        icons.textContent = strategic.map((r) => STRATEGIC[r].icon).join('');
+        icons.textContent = strategic.map((r) => (c.era ? strategicSpec(r, c.era).icon : STRATEGIC[r].icon)).join('');
         text.append(icons);
       }
       labels.append(text);
@@ -429,12 +436,12 @@ export class WorldMap {
       const trail = svg('g');
       for (const x of copies) trail.append(svg('path', { class: `army-trail${cls}`, stroke: a.color, transform: `translate(${x} 0)` }));
 
-      const icon = armyIcon(a);
+      const icon = armyIcon(a, this.era);
       const token = svg('g', { class: `army army-${icon.kind}${a.kind === 'strike' ? ' strike' : ''}` });
       const inner = svg('g', { class: 'army-scale' });
       inner.setAttribute('transform', this.#markerScale());
       const glyph = svg('g', { class: 'army-glyph' });
-      if (icon.kind === 'armor') {
+      if (icon.kind === 'armor' && !icon.text) {
         // Silueta de tanque (no existe un emoji de tanque).
         glyph.append(
           svg('rect', { x: -8, y: -1, width: 16, height: 6, rx: 3, class: 'tank-body' }),
@@ -483,17 +490,24 @@ export class WorldMap {
         const trailD = `M${el.from.cx} ${el.from.cy}Q${q.x.toFixed(2)} ${q.y.toFixed(2)} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
         for (const path of el.trail.children) path.setAttribute('d', trailD);
         // Aviones y bombas miran hacia donde van.
-        if (el.icon.kind === 'air' || el.icon.kind === 'strike') {
+        if ((el.icon.kind === 'air' && !this.era) || el.icon.kind === 'strike') {
           const ahead = point(el, Math.min(1, t + 0.02));
           const angle = (Math.atan2(ahead.y - p.y, ahead.x - p.x) * 180) / Math.PI;
           el.glyph.setAttribute('transform', `rotate(${(angle + (el.icon.kind === 'air' ? 45 : 0)).toFixed(1)})`);
         } else if (el.icon.kind === 'armor') {
-          el.glyph.setAttribute('transform', el.to.cx < el.from.cx ? 'scale(-1 1)' : '');
+          // El tanque dibujado mira a la derecha; el caballo (emoji) mira a la izquierda.
+          const goingLeft = el.to.cx < el.from.cx;
+          el.glyph.setAttribute('transform', goingLeft === !el.icon.text ? 'scale(-1 1)' : '');
         }
       }
       this.armyLoop = requestAnimationFrame(step);
     };
     this.armyLoop = requestAnimationFrame(step);
+  }
+
+  /** Época del mapa (cambia los iconos de los ejércitos en marcha). */
+  setEra(era) {
+    this.era = era;
   }
 
   /** Países que no forman parte del mapa elegido (se ven apagados y no se pueden tocar). */
