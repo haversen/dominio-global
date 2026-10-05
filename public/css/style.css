@@ -468,9 +468,10 @@ i.res-icon, .res i.res-icon, .prod i.res-icon, .market-good i.res-icon, .trade-r
 .relief { fill: url(#relief); pointer-events: none; opacity: 0.6; }
 .country.offmap { fill-opacity: 1; pointer-events: none; stroke: #6d6a60; filter: saturate(0.3) brightness(0.8); }
 /* Mapas de otra época (antigua Grecia): solo se ven en su mapa, en lugar de los países actuales. */
-.layer-era-greece, .layer-era-sengoku { display: none; }
-.show-era-greece .layer-era-greece, .show-era-sengoku .layer-era-sengoku { display: inline; }
-.show-era-greece .layer-replaced-greece, .show-era-sengoku .layer-replaced-sengoku { display: none; }
+.layer-era-greece, .layer-era-sengoku, .layer-era-rome { display: none; }
+.show-era-greece .layer-era-greece, .show-era-sengoku .layer-era-sengoku, .show-era-rome .layer-era-rome { display: inline; }
+.show-era-greece .layer-replaced-greece, .show-era-sengoku .layer-replaced-sengoku,
+.show-era-rome .layer-replaced-rome { display: none; }
 
 .country {
   stroke: rgba(80, 62, 40, 0.75);

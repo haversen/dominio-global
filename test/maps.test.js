@@ -169,6 +169,37 @@ test('mapa samurái: clanes, Joseon y Ming, con tropas de la época', async () =
   applyEra(null);
 });
 
+test('mapa del Imperio romano: ciudades, partos y bárbaros, con tropas de la época', async () => {
+  const { applyEra, unInfo } = await import('../shared/eras.js');
+  const { UNITS } = await import('../shared/military.js');
+  const { sideCountries } = await import('../shared/teams.js');
+  const game = createGame({ countryAssignment: 'random', mapScenario: 'rome' }, ['a', 'b', 'c', 'd'], { now: 0 });
+  for (const home of Object.values(game.homes)) assert.ok(SCENARIOS.rome.featured.includes(home), home);
+  assert.ok(!inScenario('rome', 'ITA') && !inScenario('rome', 'G_ATE') && !inScenario('world', 'R_ROM'));
+  for (const id of SCENARIOS.rome.countries) {
+    for (const n of COUNTRIES.get(id).neighbors) assert.ok(inScenario('rome', n), `${id} linda con ${n}`);
+  }
+  assert.ok(COUNTRIES.get('R_ROM').neighbors.includes('R_CAP'), 'Roma linda con Capua');
+  assert.ok(COUNTRIES.get('R_BIZ').neighbors.includes('R_FIL'), 'Bizancio linda con Filipópolis');
+  assert.ok(COUNTRIES.get('R_HIS').sea.includes('R_VOL'), 'el estrecho de Gibraltar se cruza en barco');
+  assert.ok(COUNTRIES.get('R_LON').sea.includes('R_LUT'), 'el canal de la Mancha se cruza en barco');
+  // Por las calzadas, de Roma a Capua se tarda menos de dos días a pie.
+  const legion = { ...emptyUnits(), infantry: 1 };
+  const hours = travelMs(COUNTRIES.get('R_ROM'), COUNTRIES.get('R_CAP'), legion, 1) / 3_600_000;
+  assert.ok(hours > 5 && hours < 48, `de Roma a Capua: ${hours} h`);
+  // El Sáhara y las estepas no cuentan como media Europa para la dominación.
+  game.countries.R_MER.owner = 'a';
+  assert.ok(currentStandings(game).find((r) => r.id === 'a').areaPct < 3);
+  assert.match(launchStrike(game, 'a', 'nuke', 'R_ROM', 0).error, /época|marcha/);
+  assert.deepEqual(sideCountries('sides', 'rome', 1).filter((id) => !inScenario('rome', id)), []);
+  assert.deepEqual(sideCountries('sides', 'rome', 2).filter((id) => !inScenario('rome', id)), []);
+  assert.match(unInfo('rome').name, /Senado/);
+  applyEra('rome');
+  assert.equal(UNITS.infantry.label, 'Legionarios');
+  assert.equal(UNITS.carrier.label, 'Quinquerremes');
+  applyEra(null);
+});
+
 test('la ONU tiene el nombre de su época', async () => {
   const { unInfo } = await import('../shared/eras.js');
   assert.equal(unInfo(null).the, 'la ONU');

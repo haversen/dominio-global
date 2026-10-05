@@ -68,7 +68,8 @@ function terrainShade(id) {
 const visualTerrain = (id) => VISUAL_TERRAIN[id] ?? terrainOf(id);
 const neutralFill = () => NEUTRAL_FILL;
 // Mapas de otra época (la antigua Grecia) se dibujan encima de los países actuales que sustituyen.
-const layerOf = (c) => (c.era ? `era-${c.era}` : replacedBy(c.id) ? `replaced-${replacedBy(c.id)}` : 'modern');
+// Un país actual puede estar sustituido en varios mapas (Grecia, en la antigua Grecia y en Roma).
+const layerOf = (c) => (c.era ? `layer-era-${c.era}` : replacedBy(c.id).map((era) => `layer-replaced-${era}`).join(' ') || 'layer-modern');
 // País de un jugador: su color mezclado con el terreno (se sigue viendo si es desierto, selva...).
 function ownedFill(id, color) {
   const rgb = parseHex(color);
@@ -143,6 +144,7 @@ function symbolPatterns() {
 const ERA_ARMY_ICONS = {
   greece: { sea: '⛵', air: '🏹', armor: '🐎', infantry: '🛡️' },
   sengoku: { sea: '⛵', air: '🏹', armor: '🐎', infantry: '🎌' },
+  rome: { sea: '⛵', air: '🏹', armor: '🐎', infantry: '🦅' },
 };
 
 // Tipo de icono de un ejército en marcha según sus unidades.
@@ -246,7 +248,7 @@ export class WorldMap {
     const inLayer = (layer) => world.countries.filter((c) => layerOf(c) === layer);
     const landOf = (layer, cls, list = inLayer(layer)) => {
       const d = list.map((c) => c.d).join('');
-      return d ? both(svg('path', { d, class: `${cls} layer-${layer}` }), d, list.map((c) => c.ds || c.d).join('')) : null;
+      return d ? both(svg('path', { d, class: `${cls} ${layer}` }), d, list.map((c) => c.ds || c.d).join('')) : null;
     };
     // Un trazado por tipo de terreno para dibujar encima sus símbolos (montañas, árboles, dunas).
     const symbolLayers = layers.flatMap((layer) => Object.entries(TERRAIN_SYMBOLS).map(([terrain, pattern]) => {
@@ -254,7 +256,7 @@ export class WorldMap {
       el?.setAttribute('fill', `url(#${pattern})`);
       return el;
     })).filter(Boolean);
-    this.layerClass = new Map(world.countries.map((c) => [c.id, `layer-${layerOf(c)}`]));
+    this.layerClass = new Map(world.countries.map((c) => [c.id, layerOf(c)]));
 
     for (const c of world.countries) {
       const path = both(svg('path', { d: c.d, class: `country ${this.layerClass.get(c.id)}`, id: `c-${c.id}`, 'data-id': c.id, fill: neutralFill(c.id) }), c.d, c.ds);
@@ -569,7 +571,7 @@ export class WorldMap {
       for (const cls of [...el.classList]) if (cls.startsWith('show-era-')) el.classList.remove(cls);
       for (const era of eras) el.classList.add(`show-era-${era}`);
     }
-    const hidden = (c) => (c.era ? !eras.has(c.era) : eras.has(replacedBy(c.id)));
+    const hidden = (c) => (c.era ? !eras.has(c.era) : replacedBy(c.id).some((era) => eras.has(era)));
     this.hidden = new Set(this.world.countries.filter(hidden).map((c) => c.id));
     this.off = new Set(this.world.countries.filter((c) => !isPlayable(c.id)).map((c) => c.id));
     for (const label of this.labels) label.off = this.off.has(label.id) || this.hidden.has(label.id);

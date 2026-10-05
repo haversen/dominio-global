@@ -18,6 +18,7 @@ const SIDE_NAMES = {
   coldwar: ['Pacto de Varsovia', 'OTAN'],
   greece: ['Liga del Peloponeso', 'Liga de Delos'],
   sengoku: ['Ejército del Oeste', 'Ejército del Este'],
+  rome: ['Imperio romano', 'Partos y bárbaros'],
 };
 
 // Países históricos de cada bando: quien no elija país recibe uno de los suyos.
@@ -28,6 +29,8 @@ const SIDE_COUNTRIES = {
   coldwar: [['RUS', 'POL', 'CUB', 'VNM', 'PRK', 'ROU', 'HUN'], ['USA', 'GBR', 'FRA', 'DEU', 'ITA', 'CAN', 'TUR', 'KOR']],
   greece: [['G_ESP', 'G_COR', 'G_TEB', 'G_ELI', 'G_ACA', 'G_MES', 'G_ARC'], ['G_ATE', 'G_EUB', 'G_LES', 'G_SAM', 'G_CIC', 'G_ROD', 'G_ARG', 'G_COC']],
   sengoku: [['J_MOR', 'J_UKI', 'J_SHI', 'J_CHO', 'J_ASA', 'J_AZA', 'J_OTO'], ['J_TOK', 'J_DAT', 'J_ODA', 'J_HOJ', 'J_MOG', 'J_SAT', 'J_IMA']],
+  rome: [['R_ROM', 'R_BIZ', 'R_ALE', 'R_CAR', 'R_ANT', 'R_LUG', 'R_LON', 'R_ATE', 'R_EFE', 'R_SAR'],
+    ['R_CTE', 'R_PRS', 'R_ECB', 'R_HEC', 'R_ARM', 'R_BAC', 'R_MAR', 'R_GOT', 'R_SAM', 'R_CAL']],
 };
 
 /** Países del bando `team` en ese mapa (solo en «Dos bandos»). */

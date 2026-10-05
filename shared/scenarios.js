@@ -112,6 +112,17 @@ export const SCENARIOS = {
     // China es enorme: para la dominación cuenta como un puñado de provincias japonesas.
     areas: { J_MIN: 40_000, J_LIA: 25_000, J_SHA: 30_000, J_NAJ: 40_000, J_ZHE: 30_000, J_FUJ: 25_000, J_JUR: 25_000, J_MON: 20_000 },
   },
+  rome: {
+    label: '🦅 Imperio romano (117 d. C.)',
+    description: 'El Imperio romano de Trajano en su máxima extensión, dividido por sus grandes ciudades (Roma, Bizancio, Alejandría, Cartago, Antioquía…), contra el Imperio parto, los kushanos, los germanos, los sármatas, los dacios libres, Armenia, Kush y los caledonios.',
+    countries: historicIds('rome'),
+    era: 'rome',
+    featured: ['R_ROM', 'R_BIZ', 'R_ALE', 'R_CAR', 'R_ANT', 'R_CTE', 'R_LUG', 'R_LON', 'R_ATE', 'R_MAR', 'R_ARM', 'R_SAR',
+      'R_EFE', 'R_PRS', 'R_BOS', 'R_BAC'],
+    allowNeighbors: true,
+    // Desiertos y estepas enormes (el Sáhara, Arabia, Kush...) cuentan como mucho esto para la dominación.
+    maxArea: 150_000,
+  },
 };
 export const SCENARIO_IDS = Object.keys(SCENARIOS);
 export const DEFAULT_SCENARIO = 'world';
@@ -132,5 +143,6 @@ export function inScenario(scenarioId, countryId) {
 
 /** Superficie que cuenta para la dominación (algunos países gigantes cuentan solo su parte del mapa). */
 export function scenarioArea(scenarioId, country) {
-  return scenarioOf(scenarioId).areas?.[country.id] ?? country.area;
+  const scenario = scenarioOf(scenarioId);
+  return Math.min(scenario.areas?.[country.id] ?? country.area, scenario.maxArea ?? Infinity);
 }
