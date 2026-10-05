@@ -648,3 +648,24 @@ test('bombas: el impacto destruye tropas e infraestructura; los cazas pueden int
 function normalizeTest(units) {
   return Object.fromEntries(Object.keys(ALL_UNITS).map((t) => [t, units[t] ?? 0]));
 }
+
+test('informe de batalla: explica la fuerza de cada bando y solo lo reciben los dos bandos', async () => {
+  const { tickGame, publicGame } = await import('../server/game.js');
+  const game = createGame({ countryAssignment: 'random', mapScenario: 'world' }, ['a', 'b'], { now: 0 });
+  game.phase = 'active';
+  const home = game.homes.a;
+  const target = COUNTRIES.get(home).neighbors.find((n) => game.countries[n] && !game.countries[n].owner);
+  game.countries[home].units.infantry = 60;
+  assert.equal(moveArmy(game, 'a', home, target, { ...game.countries[home].units }, 0).error, undefined);
+  for (let t = 5_000; t < 4e8 && !game.events.some((e) => e.type === 'battle'); t += 60_000) tickGame(game, ['a', 'b'], t);
+  const battle = game.events.find((e) => e.type === 'battle');
+  const r = battle.report;
+  // La fuerza final es la de las tropas por todos los multiplicadores.
+  const product = (base, list) => list.reduce((x, [, m]) => x * m, base);
+  assert.ok(Math.abs(product(r.attackBase, r.attackFactors) - r.attack) / r.attack < 0.05, JSON.stringify(r));
+  assert.ok(Math.abs(product(r.defenseBase, r.defenseFactors) - r.defense) / r.defense < 0.05, JSON.stringify(r));
+  assert.equal(battle.attackerWins, r.attack > r.defense);
+  assert.ok(publicGame(game, 'a', 0).events.find((e) => e.type === 'battle').report, 'el atacante lo ve');
+  const other = publicGame(game, 'b', 0).events.find((e) => e.type === 'battle');
+  assert.ok(other && !other.report && !other.defenderUnits, 'los demás solo ven el resultado');
+});

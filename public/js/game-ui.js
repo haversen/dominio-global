@@ -18,7 +18,7 @@ import {
 } from '/shared/economy.js';
 import {
   UNITS, UNIT_TYPES, TERRAIN_INFO, terrainOf, totalUnits, moveError, travelMs, emptyUnits, domainCount, isNavalRoute,
-  WEAPONS, WEAPON_TYPES, MAX_RECRUIT, BATCH_TIME_STEP,
+  WEAPONS, WEAPON_TYPES, MAX_RECRUIT, BATCH_TIME_STEP, BATTLE_FACTORS,
 } from '/shared/military.js';
 import { RELATIONS, relationOf } from '/shared/diplomacy.js';
 import { techBonus, isUnlocked, treeBonus } from '/shared/tech.js';
@@ -145,6 +145,8 @@ export class GameView {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.map && document.activeElement?.tagName !== 'INPUT') this.#focus(null);
     });
+    document.addEventListener('keydown', (e) => this.#shortcut(e));
+    $('#btn-shortcuts').addEventListener('click', () => this.#showShortcuts());
     // Mientras se pulsa dentro del panel no se redibuja, para que ningún toque se pierda.
     this.panelGuard = guardTaps($('#country-panel'), () => this.#renderPanel());
     // En el móvil, el panel es una hoja que se desliza desde abajo.
@@ -261,6 +263,62 @@ export class GameView {
 
   #serverNow() {
     return Date.now() + this.clockOffset;
+  }
+
+  // ---------- Atajos de teclado (ordenador) ----------
+
+  #shortcut(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    if (!$('#screen-game').classList.contains('active')) return;
+    if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+    if (document.querySelector('.overlay:not(.hidden)')) return; // con una ventana abierta, no
+    const ctx = this.#ctx();
+    if (!ctx || ctx.game.phase !== 'active') return;
+    const key = e.key.toLowerCase();
+    const menu = { t: '#btn-tech', d: '#btn-diplomacy', m: '#btn-market', w: '#btn-world', c: '#btn-ranking' };
+    const percent = { 1: 10, 2: 25, 3: 50, 4: 75, 5: 100 };
+    if (key === 'r') this.#repeatRecruit();
+    else if (percent[key]) this.#sendPercent(percent[key]);
+    else if (key === 'n') this.#cycleCountry(e.shiftKey ? -1 : 1);
+    else if (key === 'h') $('#btn-zoom-home').click();
+    else if (menu[key]) $(menu[key]).click();
+    else if (e.key === '?') this.#showShortcuts();
+    else return;
+    e.preventDefault();
+  }
+
+  #showShortcuts() {
+    toast(h('div', { class: 'shortcuts' },
+      h('strong', {}, '⌨️ Atajos de teclado'),
+      h('ul', {},
+        h('li', {}, h('kbd', {}, 'R'), ' repetir el último reclutamiento en el país elegido'),
+        h('li', {}, h('kbd', {}, '1'), '–', h('kbd', {}, '5'), ' elegir el 10, 25, 50, 75 o 100 % de las tropas para enviar'),
+        h('li', {}, 'Clic derecho en un vecino: enviar las tropas elegidas'),
+        h('li', {}, h('kbd', {}, 'N'), ' / ', h('kbd', {}, 'Mayús+N'), ' siguiente / anterior país tuyo'),
+        h('li', {}, h('kbd', {}, 'H'), ' ir a tu capital · ', h('kbd', {}, 'Esc'), ' deseleccionar'),
+        h('li', {}, h('kbd', {}, 'T'), ' tecnología · ', h('kbd', {}, 'D'), ' diplomacia · ', h('kbd', {}, 'M'), ' mercado · ',
+          h('kbd', {}, 'W'), ' mundo · ', h('kbd', {}, 'C'), ' clasificación'),
+        h('li', {}, h('kbd', {}, '?'), ' ver esta ayuda'))), 'info', 9000);
+  }
+
+  /** Teclas 1-5: el mismo reparto que los botones «Dividir» del panel. */
+  #sendPercent(pct) {
+    const ctx = this.#ctx();
+    const state = this.selected && ctx.game.countries[this.selected];
+    if (!state || state.owner !== ctx.me || totalUnits(state.units) === 0) return;
+    this.sendPct = pct;
+    this.sendUnits = Object.fromEntries(UNIT_TYPES.map((t) => [t, Math.floor((state.units[t] * pct) / 100)]));
+    this.#renderPanel();
+    toast(`Enviar: ${totalUnits(this.sendUnits)} tropas (${pct} %) · clic derecho en un vecino`, 'info', 1800);
+  }
+
+  /** Tecla N: recorre tus países (Mayús+N hacia atrás). */
+  #cycleCountry(step) {
+    const ctx = this.#ctx();
+    const mine = this.#myCountries(ctx).sort((a, b) => world.byId.get(a).name.localeCompare(world.byId.get(b).name, 'es'));
+    if (!mine.length) return;
+    const i = mine.indexOf(this.selected);
+    this.#focus(mine[(i + step + mine.length) % mine.length]);
   }
 
   #myCountries({ game, me }) {
@@ -438,10 +496,10 @@ export class GameView {
         toast(e.attackerWins ? `🏴 Las fuerzas neutrales han recuperado ${country}` : `🛡 Has rechazado un contraataque neutral en ${country}`,
           e.attackerWins ? 'error' : 'success', 5000);
       } else if (e.attacker === me) {
-        toast(e.attackerWins ? `⚔ Has conquistado ${country}` : `Tu ataque a ${country} ha fracasado`,
+        toast(e.attackerWins ? `⚔ Has conquistado ${country} · 📜 informe en su panel` : `Tu ataque a ${country} ha fracasado · 📜 informe en su panel`,
           e.attackerWins ? 'success' : 'error', 4500);
       } else if (e.defender === me) {
-        toast(e.attackerWins ? `¡${attacker} ha conquistado ${country}!` : `🛡 Has rechazado el ataque de ${attacker} a ${country}`,
+        toast(e.attackerWins ? `¡${attacker} ha conquistado ${country}! · 📜 informe en su panel` : `🛡 Has rechazado el ataque de ${attacker} a ${country} · 📜 informe en su panel`,
           e.attackerWins ? 'error' : 'success', 5000);
       }
     }
@@ -572,6 +630,7 @@ export class GameView {
       owner && game.phase === 'active' && (owner.id === me || !state.hidden) && this.#stabilityLine(state),
       game.phase === 'active' && this.#armySection(state, now),
       this.#movesSection(c, ctx, now),
+      this.#battleReportSection(c, ctx, now),
       isMine && this.#recruitSection(c, ctx),
       isMine && this.#sendSection(c, state, ctx),
       !isMine && game.phase === 'active' && this.#attackFromSection(c, ctx),
@@ -654,6 +713,49 @@ export class GameView {
       h('em', { title: training[t] ? 'En entrenamiento' : '' }, training[t] ? `+${training[t].count} · ${secondsText(training[t].next - now)}` : '\u00a0')))));
   }
 
+  // 📜 Informe de la última batalla en este país en la que luchaste: fuerza de cada bando y por qué ganó uno.
+  #battleReportSection(c, { game, players, me }, now) {
+    const e = (game.events ?? []).findLast((x) => x.type === 'battle' && x.country === c.id && x.report
+      && (x.attacker === me || x.defender === me));
+    if (!e) return null;
+    const r = e.report;
+    const won = (e.attacker === me) === e.attackerWins;
+    const name = (id) => (id === me ? 'Tú' : players.get(id)?.name ?? 'Neutrales');
+    const units = (list) => {
+      const shown = UNIT_TYPES.filter((t) => list?.[t] > 0);
+      return shown.length ? shown.map((t) => `${UNITS[t].icon} ${list[t]}`).join('  ') : '—';
+    };
+    const label = (key) => (key === 'terrain' ? `Terreno (${TERRAIN_INFO[r.terrain]?.label.toLowerCase() ?? r.terrain})` : BATTLE_FACTORS[key]);
+    const factorRows = (list) => list.map(([key, m]) => h('li', { class: m > 1 ? 'up' : 'down' },
+      h('span', {}, label(key)), h('b', {}, `×${m.toFixed(2).replace('.', ',')}`)));
+    const side = (title, who, troops, losses, base, factors, total) => h('div', { class: 'report-side' },
+      h('strong', {}, `${title}: ${name(who)}`),
+      h('small', { class: 'muted' }, `Tropas: ${units(troops)}`),
+      h('small', { class: 'muted' }, `Bajas: ${units(losses)}`),
+      h('ul', { class: 'report-factors' },
+        h('li', {}, h('span', {}, 'Fuerza de las tropas'), h('b', {}, fmt.format(Math.round(base)))),
+        factorRows(factors),
+        h('li', { class: 'total' }, h('span', {}, 'Fuerza final'), h('b', {}, fmt.format(Math.round(total))))));
+    // Lo que más pesó: el multiplicador más grande a favor del ganador o en contra del perdedor.
+    const atkWon = e.attackerWins;
+    const decisive = [
+      ...r.attackFactors.map(([k, m]) => ({ k, m, side: 'ataque', helps: atkWon ? m > 1 : m < 1 })),
+      ...r.defenseFactors.map(([k, m]) => ({ k, m, side: 'defensa', helps: atkWon ? m < 1 : m > 1 })),
+    ].filter((f) => f.helps).sort((a, b) => Math.abs(Math.log(b.m)) - Math.abs(Math.log(a.m)))[0];
+    this.reportOpen ??= {};
+    return h('details', {
+      class: 'battle-report',
+      open: this.reportOpen[e.id] ?? false,
+      onToggle: (ev) => { this.reportOpen[e.id] = ev.currentTarget.open; },
+    },
+    h('summary', {}, `📜 Informe de batalla · ${won ? '✅ victoria' : '❌ derrota'} · hace ${secondsText(Math.max(0, now - e.ts))}`),
+    h('p', { class: 'small' }, `${atkWon ? 'Ganó el atacante' : 'Ganó la defensa'}: ${fmt.format(Math.round(r.attack))} de fuerza contra ${fmt.format(Math.round(r.defense))}.`
+      + (decisive ? ` Lo que más pesó: ${label(decisive.k).toLowerCase()} (×${decisive.m.toFixed(2).replace('.', ',')} en la ${decisive.side}).` : '')),
+    h('div', { class: 'report-grid' },
+      side('Ataque', e.attacker, e.attackerUnits, e.attackerLosses, r.attackBase, r.attackFactors, r.attack),
+      side('Defensa', e.defender, e.defenderUnits, e.defenderLosses, r.defenseBase, r.defenseFactors, r.defense)));
+  }
+
   #movesSection(c, { game, players, me }, now) {
     const moves = game.armies.filter((a) => a.to === c.id || a.from === c.id);
     if (!moves.length) return null;
@@ -670,11 +772,56 @@ export class GameView {
       })));
   }
 
+  async #recruit(countryId, type, n, btn = null) {
+    if (!n) return;
+    if (btn) btn.disabled = true;
+    const unit = UNITS[type];
+    const res = await request('game:recruit', { countryId, type, count: n });
+    if (!res.ok) toast(res.error, 'error');
+    else {
+      play('recruit');
+      toast(`${unit.icon} ${n} × ${unit.label} en entrenamiento`, 'success', 2000);
+      // Se recuerda para «Repetir» (botón 🔁 o tecla R), también tras recargar.
+      this.lastRecruit = { type, count: n };
+      try { localStorage.setItem('dg.lastRecruit', JSON.stringify(this.lastRecruit)); } catch {}
+    }
+    document.activeElement?.blur?.();
+    this.#renderPanel();
+  }
+
+  /** Repite el último reclutamiento en el país seleccionado (botón 🔁 y tecla R). */
+  #repeatRecruit(btn = null) {
+    const ctx = this.#ctx();
+    const last = this.#lastRecruit();
+    if (!ctx || !last || ctx.game.phase !== 'active') return;
+    if (!this.selected || ctx.game.countries[this.selected]?.owner !== ctx.me) {
+      toast('Selecciona primero uno de tus países', 'error');
+      return;
+    }
+    this.#recruit(this.selected, last.type, last.count, btn);
+  }
+
+  #lastRecruit() {
+    if (this.lastRecruit === undefined) {
+      try { this.lastRecruit = JSON.parse(localStorage.getItem('dg.lastRecruit')); } catch { this.lastRecruit = null; }
+    }
+    const last = this.lastRecruit;
+    return last && UNITS[last.type] && last.count >= 1 && last.count <= MAX_RECRUIT ? last : null;
+  }
+
   #recruitSection(c, { self }) {
     const available = UNIT_TYPES.filter((t) => isUnlocked(self?.unlocked, { unit: t }));
     const locked = UNIT_TYPES.length - available.length;
+    const last = this.#lastRecruit();
+    const lastOk = last && available.includes(last.type);
     return h('div', {},
-      h('h4', { class: 'panel-sub' }, 'Reclutar'),
+      h('div', { class: 'panel-top' },
+        h('h4', { class: 'panel-sub' }, 'Reclutar'),
+        lastOk && h('button', {
+          class: 'btn btn-xs',
+          title: 'Repite tu último reclutamiento en este país (tecla R)',
+          onClick: (e) => this.#repeatRecruit(e.currentTarget),
+        }, `🔁 ${last.count} × ${UNITS[last.type].icon} ${UNITS[last.type].label}`)),
       locked > 0 && h('p', { class: 'muted small' }, `🔬 Investiga en Tecnología para desbloquear ${locked} tipos de tropa más.`),
       h('div', { class: 'recruit-list' }, available.map((t) => {
         const unit = UNITS[t];
@@ -686,18 +833,7 @@ export class GameView {
           ...Object.entries(unitCost).map(([r, v]) => (v > 0 ? Math.floor((self.resources[r] ?? 0) / v) : MAX_RECRUIT)));
         this.recruitQty ??= {};
         const qty = Math.max(1, Math.min(MAX_RECRUIT, this.recruitQty[t] ?? 1));
-        const recruit = async (n, btn) => {
-          if (!n) return;
-          btn.disabled = true;
-          const res = await request('game:recruit', { countryId: c.id, type: t, count: n });
-          if (!res.ok) toast(res.error, 'error');
-          else {
-            play('recruit');
-            toast(`${unit.icon} ${n} × ${unit.label} en entrenamiento`, 'success', 2000);
-          }
-          document.activeElement?.blur?.();
-          this.#renderPanel();
-        };
+        const recruit = (n, btn) => this.#recruit(c.id, t, n, btn);
         const reason = blocked ? 'requiere costa'
           : missing ? `falta ${STRATEGIC[missing].icon} ${STRATEGIC[missing].label.toLowerCase()}` : null;
         const input = h('input', {
@@ -994,7 +1130,7 @@ export class GameView {
         h('small', {}, detail));
       })),
       this.#navalSection(c, state, chosen, ctxOf),
-      h('p', { class: 'muted small hint-desktop' }, 'Atajo: clic derecho sobre un país en el mapa para enviar las tropas elegidas.'));
+      h('p', { class: 'muted small hint-desktop' }, 'Atajos: clic derecho sobre un país del mapa para enviar las tropas elegidas · teclas 1–5 para dividir · ? para ver todos.'));
   }
 
   // En un país ajeno: desde qué países tuyos puedes atacarlo.

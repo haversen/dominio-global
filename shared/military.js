@@ -284,19 +284,21 @@ export function resolveBattle(attackers, defenders, ctx = {}, rng = Math.random)
   attackers = normalizeUnits(attackers);
   defenders = normalizeUnits(defenders);
   const terrain = ctx.terrain ?? 'plains';
-  const luck = () => 0.8 + rng() * 0.4;
+  const attackLuck = 0.8 + rng() * 0.4;
+  const defenseLuck = 0.8 + rng() * 0.4;
 
-  let attackPower = power(attackers, 'attack', { terrain, supplied: ctx.attackerSupply, mods: ctx.attackerMods }) * luck();
+  let attackPower = power(attackers, 'attack', { terrain, supplied: ctx.attackerSupply, mods: ctx.attackerMods }) * attackLuck;
   if (ctx.amphibious) attackPower *= AMPHIBIOUS_ATTACK;
   attackPower *= ctx.attackBonus ?? 1; // tecnología
 
-  let defensePower = power(defenders, 'defense', { supplied: ctx.defenderSupply, mods: ctx.defenderMods }) * luck();
+  let defensePower = power(defenders, 'defense', { supplied: ctx.defenderSupply, mods: ctx.defenderMods }) * defenseLuck;
   defensePower *= ctx.defenseBonus ?? 1;
   defensePower *= TERRAIN_INFO[terrain].defense;
   defensePower *= 1 + LEVEL_DEFENSE * ((ctx.level ?? 1) - 1);
   if (ctx.capital) defensePower *= CAPITAL_DEFENSE;
 
   const attackerWins = attackPower > defensePower;
+  const report = battleReport(attackers, defenders, ctx, { attackLuck, defenseLuck, attackPower, defensePower });
   // El ganador pierde más cuanto más igualada esté la batalla.
   const winnerLoss = (loser, winner) => (winner > 0 ? Math.min(0.9, 0.6 * (loser / winner) ** 1.3) : 0);
 
@@ -307,7 +309,7 @@ export function resolveBattle(attackers, defenders, ctx = {}, rng = Math.random)
       const strongest = UNIT_TYPES.find((t) => attackers[t] > 0);
       left[strongest] = 1;
     }
-    return { attackerWins, attackersLeft: left, defendersLeft: emptyUnits(), attackPower, defensePower };
+    return { attackerWins, attackersLeft: left, defendersLeft: emptyUnits(), attackPower, defensePower, report };
   }
   return {
     attackerWins,
@@ -315,6 +317,57 @@ export function resolveBattle(attackers, defenders, ctx = {}, rng = Math.random)
     defendersLeft: applyLosses(defenders, winnerLoss(attackPower, defensePower), rng),
     attackPower,
     defensePower,
+    report,
+  };
+}
+
+// Informe de batalla: la fuerza de cada bando y qué la subió o la bajó (multiplicadores distintos de 1).
+// Las claves se traducen a texto en el cliente (BATTLE_FACTORS).
+export const BATTLE_FACTORS = {
+  luck: 'Suerte',
+  terrain: 'Terreno',
+  amphibious: 'Desembarco',
+  bonus: 'Tecnología, líder y fortificaciones',
+  level: 'Desarrollo del país',
+  capital: 'Capital',
+  supply: 'Suministros',
+  stack: 'Demasiadas tropas juntas',
+};
+function battleReport(attackers, defenders, ctx, { attackLuck, defenseLuck, attackPower, defensePower }) {
+  const terrain = ctx.terrain ?? 'plains';
+  const round = (x) => Math.round(x * 100) / 100;
+  // Fuerza «en bruto» (sin terreno, suministros ni amontonamiento) para separar cada efecto.
+  const raw = (units, kind, opts) => power(units, kind, opts) / stackFactor(totalUnits(units));
+  const atkBase = raw(attackers, 'attack', { mods: ctx.attackerMods });
+  const defBase = raw(defenders, 'defense', { mods: ctx.defenderMods });
+  const ratio = (a, b) => (b > 0 ? a / b : 1);
+  const attack = [
+    ['luck', attackLuck],
+    ['terrain', ratio(raw(attackers, 'attack', { terrain, mods: ctx.attackerMods }), atkBase)],
+    ['supply', ratio(raw(attackers, 'attack', { terrain, supplied: ctx.attackerSupply, mods: ctx.attackerMods }),
+      raw(attackers, 'attack', { terrain, mods: ctx.attackerMods }))],
+    ['stack', stackFactor(totalUnits(attackers))],
+    ['amphibious', ctx.amphibious ? AMPHIBIOUS_ATTACK : 1],
+    ['bonus', ctx.attackBonus ?? 1],
+  ];
+  const defense = [
+    ['luck', defenseLuck],
+    ['terrain', TERRAIN_INFO[terrain].defense],
+    ['supply', ratio(raw(defenders, 'defense', { supplied: ctx.defenderSupply, mods: ctx.defenderMods }), defBase)],
+    ['stack', stackFactor(totalUnits(defenders))],
+    ['bonus', ctx.defenseBonus ?? 1],
+    ['level', 1 + LEVEL_DEFENSE * ((ctx.level ?? 1) - 1)],
+    ['capital', ctx.capital ? CAPITAL_DEFENSE : 1],
+  ];
+  const keep = (list) => list.filter(([, m]) => Math.abs(m - 1) >= 0.01).map(([key, m]) => [key, round(m)]);
+  return {
+    terrain,
+    attackBase: round(atkBase),
+    defenseBase: round(defBase),
+    attack: round(attackPower),
+    defense: round(defensePower),
+    attackFactors: keep(attack),
+    defenseFactors: keep(defense),
   };
 }
 

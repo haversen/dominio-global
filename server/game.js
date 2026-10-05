@@ -873,6 +873,9 @@ function arrive(game, army, now, rng) {
     attackerWins: result.attackerWins,
     attackerLosses: diffUnits(army.units, result.attackersLeft),
     defenderLosses: diffUnits(before, result.defendersLeft),
+    attackerUnits: { ...army.units },
+    defenderUnits: before,
+    report: result.report,
     capitalTaken: false,
   };
 
@@ -1089,6 +1092,13 @@ export function visibleCountries(game, viewerId, now = Date.now()) {
   return seen;
 }
 
+// El informe de batalla (tropas de cada bando y por qué ganó uno) solo lo reciben los dos bandos.
+function privateBattle(e, viewerId) {
+  if (e.type !== 'battle' || !e.report || viewerId === e.attacker || viewerId === e.defender) return e;
+  const { report, attackerUnits, defenderUnits, ...rest } = e;
+  return rest;
+}
+
 export function publicGame(game, viewerId = null, now = Date.now()) {
   const visible = visibleCountries(game, viewerId, now);
   const canSee = (id) => !visible || visible.has(id);
@@ -1106,7 +1116,7 @@ export function publicGame(game, viewerId = null, now = Date.now()) {
     // Con niebla solo se ven los ejércitos y bombas que salen o llegan a países visibles.
     armies: visible ? game.armies.filter((a) => a.owner === viewerId || canSee(a.from) || canSee(a.to)) : game.armies,
     strikes: visible ? game.strikes.filter((x) => x.owner === viewerId || canSee(x.to)) : game.strikes,
-    events: game.events,
+    events: viewerId ? game.events.map((e) => privateBattle(e, viewerId)) : game.events,
     relations: game.relations,
     teams: game.teams ?? null,
     capitalRule: game.capitalRule ?? 'empire',

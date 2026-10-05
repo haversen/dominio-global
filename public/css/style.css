@@ -561,6 +561,21 @@ i.res-icon, .res i.res-icon, .prod i.res-icon, .market-good i.res-icon, .trade-r
 .unit-icon { width: 18px; text-align: center; font-size: 15px; color: var(--accent); }
 
 .recruit-list { display: grid; gap: 4px; }
+/* Atajos de teclado */
+.shortcuts ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13px; }
+kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 5px; border: 1px solid var(--border-strong); border-radius: 3px; background: rgba(255, 255, 255, 0.06); }
+/* Informe de batalla */
+.battle-report { border: 1px solid var(--border); border-radius: 4px; background: rgba(0, 0, 0, 0.25); padding: 6px 10px; }
+.battle-report summary { cursor: pointer; font-size: 13px; }
+.battle-report p { margin: 8px 0; }
+.report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.report-side { display: grid; gap: 2px; align-content: start; font-size: 12px; min-width: 0; }
+.report-factors { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
+.report-factors li { display: flex; justify-content: space-between; gap: 6px; }
+.report-factors b { font-family: var(--font-mono); }
+.report-factors .up b { color: var(--success); }
+.report-factors .down b { color: var(--danger); }
+.report-factors .total { border-top: 1px solid var(--border); padding-top: 2px; font-weight: 600; }
 .recruit-row { display: flex; align-items: center; gap: 8px; }
 .recruit-unit { flex-wrap: wrap; row-gap: 2px; padding: 4px 0; border-bottom: 1px solid var(--border); }
 .recruit-row input.recruit-qty { width: 72px; min-width: 0; flex: 0 0 72px; padding: 4px 6px; font-family: var(--font-mono); font-size: 14px; text-align: right; }

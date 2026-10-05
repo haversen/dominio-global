@@ -194,6 +194,12 @@ El juego se puede **instalar** en la pantalla de inicio del móvil u ordenador (
 
 Con al menos un barco en la expedición se puede zarpar desde un país con costa hacia **cualquier país con costa del mapa**, no solo a los vecinos (por ejemplo, de Estados Unidos a Australia), llevando también tropas de tierra y aviones a bordo. Viajan a la velocidad del barco más lento, las rutas por mar cuentan un 40 % más de distancia y el desembarco es un ataque anfibio (salvo con la modificación *Desembarco anfibio*). En el panel de un país propio con costa aparece **Expedición naval** con la lista de destinos; en un país ajeno, **Atacar por mar desde** muestra tus puertos con barcos. En el mapa, las flotas que cruzan medio mundo dan la vuelta por el borde (por el Pacífico).
 
+### Atajos de teclado, reclutamiento rápido e informe de batalla
+
+- **Atajos** (en el ordenador; `?` o ☰ Menú → ⌨️ los muestra): `R` repite el último reclutamiento en el país elegido, `1`–`5` eligen el 10, 25, 50, 75 o 100 % de las tropas para enviar (y clic derecho en un vecino las envía), `N` / `Mayús+N` recorren tus países, `H` va a tu capital, `T` `D` `M` `W` `C` abren tecnología, diplomacia, mercado, mundo y clasificación.
+- **🔁 Repetir reclutamiento**: junto a «Reclutar» aparece tu último lote (p. ej. «🔁 10 × Infantería») para pedirlo otra vez en cualquier país con un clic. Se recuerda aunque recargues.
+- **📜 Informe de batalla**: en el panel del país donde has luchado (atacando o defendiendo) se ve la fuerza de cada bando, sus tropas y bajas, y qué la subió o bajó (suerte, terreno, desembarco, suministros, demasiadas tropas juntas, tecnología, desarrollo, capital), con lo que más pesó. Solo lo reciben los dos bandos.
+
 ### Aspecto del mapa
 
 Mapa topográfico al estilo de los juegos de estrategia como Call of War: tierra en tonos de pergamino con curvas de nivel y sombreado de relieve, símbolos de terreno (montañas, árboles, dunas), mar azul claro con aguas poco profundas en las costas, nombres en mayúsculas oscuras y los países de cada jugador teñidos con su color. Los ejércitos avanzan por rutas curvas dejando un rastro, con el icono de su tipo (🪖 infantería, silueta de tanque, ✈️ aviación orientada hacia su destino, 🚢 por mar). Los recursos se muestran con su emoticono: 💰 dinero, 🌾 alimentos, 🛢️ petróleo y 🏭 industria.
