@@ -50,6 +50,24 @@ const SOURCES = {
       '792', '196', 'N. Cyprus', '268', '051', '031', '760', '422', '376', '275', '400', '368', '414', '364',
     ],
   },
+  vikings: {
+    lat: 57,
+    countries: [
+      '578', '752', '208', '246', '826', '372', '528', '056', '442', '250', '276', '616', '233', '428', '440', '643',
+    ],
+    // Solo el norte de los países grandes, y sin territorios de ultramar (Svalbard, Guayana Francesa...).
+    clip: {
+      578: [[4, 57.5], [32, 57.5], [32, 71.5], [4, 71.5], [4, 57.5]],
+      826: [[-9, 49.5], [2, 49.5], [2, 61], [-9, 61], [-9, 49.5]],
+      528: [[3, 50.5], [8, 50.5], [8, 54], [3, 54], [3, 50.5]],
+      250: [[-5.5, 45.8], [8.5, 45.8], [8.5, 51.5], [-5.5, 51.5], [-5.5, 45.8]],
+      276: [[5.5, 50.2], [15.5, 50.2], [15.5, 55.2], [5.5, 55.2], [5.5, 50.2]],
+      616: [[14, 52.6], [24, 52.6], [24, 55], [14, 55], [14, 52.6]],
+      643: [[19, 54.2], [36, 54.2], [36, 61.8], [19, 61.8], [19, 54.2]],
+    },
+    // Las islas británicas, Escandinavia y el continente se reparten por separado (nadie cruza el mar).
+    groups: [['826', '372'], ['578', '752', '246', '643', '233', '428', '440'], ['208', '528', '056', '442', '250', '276', '616']],
+  },
 };
 
 const projection = geoNaturalEarth1().fitExtent([[10, 10], [WIDTH - 10, HEIGHT - 10]], { type: 'Sphere' });
@@ -167,7 +185,7 @@ function buildEra(era) {
       console.log(`  (${era}: tierra sin capital cerca de ${(x / KX).toFixed(1)}, ${y.toFixed(1)}: va entera a la región más cercana)`);
       return null;
     }
-    const voronoi = Delaunay.from(own.map((s) => s.p)).voronoi([0, -10, 200 * KX, 80]);
+    const voronoi = Delaunay.from(own.map((s) => s.p)).voronoi([-200 * KX, -90, 200 * KX, 90]);
     return { land, own, group: land.group, cells: own.map((_, i) => voronoi.cellPolygon(i)) };
   }).filter(Boolean);
   const lost = landSeeds.filter((s) => !landmasses.some((m) => m.own.includes(s)));

@@ -200,6 +200,34 @@ test('mapa del Imperio romano: de Roma a Persia, con tropas de la época', async
   applyEra(null);
 });
 
+test('mapa vikingo: Kattegat, Hedeby, Wessex y los demás, con tropas de la época', async () => {
+  const { applyEra, unInfo } = await import('../shared/eras.js');
+  const { UNITS } = await import('../shared/military.js');
+  const { sideCountries } = await import('../shared/teams.js');
+  const game = createGame({ countryAssignment: 'random', mapScenario: 'vikings' }, ['a', 'b', 'c', 'd'], { now: 0 });
+  for (const home of Object.values(game.homes)) assert.ok(SCENARIOS.vikings.featured.includes(home), home);
+  assert.ok(!inScenario('vikings', 'NOR') && !inScenario('vikings', 'R_ROM') && !inScenario('world', 'V_KAT'));
+  for (const id of SCENARIOS.vikings.countries) {
+    for (const n of COUNTRIES.get(id).neighbors) assert.ok(inScenario('vikings', n), `${id} linda con ${n}`);
+  }
+  assert.ok(COUNTRIES.get('V_KAT').coastal && COUNTRIES.get('V_KAT').neighbors.includes('V_ARO'), 'Kattegat, en la costa de Jutlandia');
+  assert.ok(COUNTRIES.get('V_KEN').sea.includes('V_FLA'), 'de Kent a Flandes se cruza en barco');
+  assert.ok(COUNTRIES.get('V_WES').neighbors.includes('V_MER'), 'Wessex linda con Mercia');
+  // Por mar se va mucho más rápido que a pie: un drakkar llega antes que los guerreros andando.
+  const kat = COUNTRIES.get('V_KAT');
+  const wes = COUNTRIES.get('V_WES');
+  assert.ok(travelMs(kat, wes, { ...emptyUnits(), infantry: 5, carrier: 1 }, 1) < travelMs(kat, COUNTRIES.get('V_HED'), { ...emptyUnits(), infantry: 5 }, 1) * 3);
+  game.countries.V_SAP.owner = 'a';
+  assert.ok(currentStandings(game).find((r) => r.id === 'a').areaPct < 5, 'las tierras de los samis no cuentan como medio mapa');
+  assert.match(launchStrike(game, 'a', 'nuke', 'V_KAT', 0).error, /época|marcha/);
+  for (const team of [1, 2]) assert.deepEqual(sideCountries('sides', 'vikings', team).filter((id) => !inScenario('vikings', id)), []);
+  assert.match(unInfo('vikings').name, /Thing/);
+  applyEra('vikings');
+  assert.equal(UNITS.specops.label, 'Berserkers');
+  assert.equal(UNITS.carrier.label, 'Drakkars');
+  applyEra(null);
+});
+
 test('la ONU tiene el nombre de su época', async () => {
   const { unInfo } = await import('../shared/eras.js');
   assert.equal(unInfo(null).the, 'la ONU');

@@ -145,6 +145,7 @@ const ERA_ARMY_ICONS = {
   greece: { sea: '⛵', air: '🏹', armor: '🐎', infantry: '🛡️' },
   sengoku: { sea: '⛵', air: '🏹', armor: '🐎', infantry: '🎌' },
   rome: { sea: '⛵', air: '🏹', armor: '🐎', infantry: '🦅' },
+  vikings: { sea: '⛵', air: '🏹', armor: '🐎', infantry: '🪓' },
 };
 
 // Tipo de icono de un ejército en marcha según sus unidades.

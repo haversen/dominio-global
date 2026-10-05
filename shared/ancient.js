@@ -4,7 +4,7 @@
 //
 // profile: [economía, agricultura, petróleo, industria] como en shared/economy.js.
 // island: la región es una isla (o un grupo de islas) y no se reparte la tierra firme.
-// Los ids llevan un prefijo por mapa (G_ Grecia, J_ Japón, R_ Roma) para no chocar con los países actuales.
+// Los ids llevan un prefijo por mapa (G_ Grecia, J_ Japón, R_ Roma, V_ vikingos) para no chocar con los países actuales.
 
 const list = (s) => s.trim().split(/\s+/);
 
@@ -205,6 +205,89 @@ const ROME_REGIONS = [
   { id: 'R_SAC', name: 'Sacastán', lon: 61.0, lat: 30.9, terrain: 'desert', profile: [1, 1, 0, 0] },
 ];
 
+// ---------- Era vikinga (hacia el 850, la época de Ragnar Lodbrok): reinos, jarls y pueblos del norte ----------
+
+const VIKING_REGIONS = [
+  // Dinamarca (Kattegat: la costa del estrecho del mismo nombre, al norte de Jutlandia)
+  { id: 'V_KAT', name: 'Kattegat', lon: 10.0, lat: 56.9, terrain: 'plains', profile: [3, 2, 0, 1] },
+  { id: 'V_ARO', name: 'Aros', lon: 9.6, lat: 56.15, terrain: 'plains', profile: [2, 2, 0, 1] },
+  { id: 'V_RIB', name: 'Ribe', lon: 8.9, lat: 55.4, terrain: 'plains', profile: [3, 2, 0, 1] },
+  { id: 'V_HED', name: 'Hedeby', lon: 9.6, lat: 54.5, terrain: 'plains', profile: [4, 1, 0, 2] },
+  { id: 'V_ODE', name: 'Odense (Fionia)', lon: 10.4, lat: 55.35, island: true, terrain: 'plains', profile: [2, 2, 0, 0] },
+  { id: 'V_LEJ', name: 'Lejre (Selandia)', lon: 11.9, lat: 55.55, island: true, terrain: 'plains', profile: [3, 2, 0, 1] },
+  { id: 'V_SKA', name: 'Escania', lon: 13.4, lat: 55.85, terrain: 'plains', profile: [2, 3, 0, 1] },
+  // Noruega: reinos pequeños de fiordos y valles
+  { id: 'V_KAU', name: 'Kaupang (Vestfold)', lon: 10.0, lat: 59.4, terrain: 'plains', profile: [3, 1, 0, 2] },
+  { id: 'V_AGD', name: 'Agder', lon: 7.8, lat: 58.7, terrain: 'mountains', profile: [1, 1, 0, 1] },
+  { id: 'V_ROG', name: 'Rogaland (Avaldsnes)', lon: 6.2, lat: 59.0, terrain: 'mountains', profile: [2, 1, 0, 1] },
+  { id: 'V_HOR', name: 'Hordaland', lon: 6.5, lat: 60.4, terrain: 'mountains', profile: [1, 1, 0, 1] },
+  { id: 'V_SOG', name: 'Sogn', lon: 6.8, lat: 61.4, terrain: 'mountains', profile: [1, 1, 0, 0] },
+  { id: 'V_MOR', name: 'Møre', lon: 8.0, lat: 62.6, terrain: 'mountains', profile: [1, 1, 0, 0] },
+  { id: 'V_OPP', name: 'Oppland', lon: 10.0, lat: 61.2, terrain: 'mountains', profile: [1, 2, 0, 1] },
+  { id: 'V_TRO', name: 'Trøndelag (Lade)', lon: 10.9, lat: 63.4, terrain: 'mountains', profile: [2, 2, 0, 1] },
+  { id: 'V_HAL', name: 'Hålogaland', lon: 14.8, lat: 67.0, terrain: 'frozen', profile: [1, 0, 0, 1] },
+  // Suecia: svear, gautas y la isla de Gotland
+  { id: 'V_UPP', name: 'Uppsala', lon: 18.0, lat: 60.1, terrain: 'plains', profile: [3, 2, 0, 1] },
+  { id: 'V_BIR', name: 'Birka', lon: 16.9, lat: 59.3, terrain: 'plains', profile: [4, 1, 0, 1] },
+  { id: 'V_VAR', name: 'Värmland', lon: 13.2, lat: 59.8, terrain: 'jungle', profile: [1, 1, 0, 1] },
+  { id: 'V_GAU', name: 'Götaland (Skara)', lon: 13.0, lat: 58.3, terrain: 'plains', profile: [2, 3, 0, 1] },
+  { id: 'V_OST', name: 'Östergötland', lon: 15.6, lat: 58.3, terrain: 'plains', profile: [2, 2, 0, 1] },
+  { id: 'V_SMA', name: 'Småland', lon: 14.8, lat: 57.0, terrain: 'jungle', profile: [1, 1, 0, 1] },
+  { id: 'V_GTL', name: 'Gotland', lon: 18.5, lat: 57.45, island: true, terrain: 'plains', profile: [4, 1, 0, 0] },
+  { id: 'V_HAG', name: 'Hälsingland', lon: 16.0, lat: 61.6, terrain: 'jungle', profile: [1, 1, 0, 0] },
+  { id: 'V_JAM', name: 'Jämtland', lon: 14.5, lat: 63.3, terrain: 'jungle', profile: [1, 1, 0, 0] },
+  { id: 'V_SAP', name: 'Sápmi (samis)', lon: 21.5, lat: 67.5, terrain: 'frozen', profile: [1, 0, 0, 0] },
+  // Finlandia, el Báltico y la Rus de Kiev en sus inicios
+  { id: 'V_FIN', name: 'Finlandia', lon: 23.5, lat: 61.0, terrain: 'jungle', profile: [1, 1, 0, 0] },
+  { id: 'V_KAR', name: 'Carelia', lon: 28.5, lat: 62.3, terrain: 'jungle', profile: [1, 1, 0, 0] },
+  { id: 'V_KVE', name: 'Kvenland', lon: 25.5, lat: 65.0, terrain: 'frozen', profile: [1, 0, 0, 0] },
+  { id: 'V_LAD', name: 'Aldeigjuborg (Ladoga)', lon: 32.3, lat: 60.0, terrain: 'jungle', profile: [2, 1, 0, 0] },
+  { id: 'V_NOV', name: 'Hólmgarðr (Nóvgorod)', lon: 31.3, lat: 58.5, terrain: 'plains', profile: [3, 2, 0, 1] },
+  { id: 'V_EST', name: 'Estonios', lon: 25.5, lat: 58.8, terrain: 'plains', profile: [1, 1, 0, 0] },
+  { id: 'V_CUR', name: 'Curonios', lon: 22.0, lat: 56.8, terrain: 'plains', profile: [1, 1, 0, 0] },
+  { id: 'V_LAT', name: 'Latgalios', lon: 26.8, lat: 56.6, terrain: 'jungle', profile: [1, 1, 0, 0] },
+  { id: 'V_LIT', name: 'Lituanos', lon: 24.0, lat: 55.2, terrain: 'jungle', profile: [1, 2, 0, 0] },
+  { id: 'V_PRU', name: 'Prusianos', lon: 20.8, lat: 53.9, terrain: 'plains', profile: [1, 1, 0, 0] },
+  // Costa sur del Báltico y Sajonia
+  { id: 'V_POM', name: 'Pomeranos', lon: 16.0, lat: 53.8, terrain: 'plains', profile: [1, 2, 0, 0] },
+  { id: 'V_OBO', name: 'Abodritas (Reric)', lon: 11.5, lat: 53.8, terrain: 'plains', profile: [2, 2, 0, 1] },
+  { id: 'V_SAJ', name: 'Sajonia (Bremen)', lon: 8.8, lat: 53.0, terrain: 'plains', profile: [2, 2, 0, 1] },
+  { id: 'V_MAG', name: 'Magdeburgo', lon: 11.6, lat: 52.1, terrain: 'plains', profile: [2, 2, 0, 1] },
+  // Frisia y el reino de los francos
+  { id: 'V_DOR', name: 'Dorestad (Frisia)', lon: 5.3, lat: 52.0, terrain: 'plains', profile: [4, 2, 0, 1] },
+  { id: 'V_FLA', name: 'Flandes', lon: 3.5, lat: 51.0, terrain: 'plains', profile: [2, 2, 0, 1] },
+  { id: 'V_AQU', name: 'Aquisgrán', lon: 6.5, lat: 50.4, terrain: 'plains', profile: [3, 2, 0, 2] },
+  { id: 'V_PAR', name: 'París', lon: 2.35, lat: 48.86, terrain: 'plains', profile: [5, 3, 0, 2] },
+  { id: 'V_ROU', name: 'Ruan', lon: 1.1, lat: 49.4, terrain: 'plains', profile: [3, 2, 0, 1] },
+  { id: 'V_REI', name: 'Reims', lon: 4.03, lat: 49.25, terrain: 'plains', profile: [2, 3, 0, 1] },
+  { id: 'V_BRE', name: 'Bretaña', lon: -2.9, lat: 48.1, terrain: 'plains', profile: [1, 2, 0, 0] },
+  { id: 'V_TOU', name: 'Tours (Loira)', lon: 0.7, lat: 47.4, terrain: 'plains', profile: [2, 3, 0, 1] },
+  { id: 'V_POI', name: 'Aquitania (Poitiers)', lon: 0.34, lat: 46.4, terrain: 'plains', profile: [2, 2, 0, 1] },
+  { id: 'V_BOU', name: 'Borgoña', lon: 5.0, lat: 47.2, terrain: 'plains', profile: [2, 2, 0, 1] },
+  // Inglaterra: los reinos anglosajones
+  { id: 'V_WES', name: 'Wessex', lon: -1.5, lat: 51.1, terrain: 'plains', profile: [4, 3, 0, 1] },
+  { id: 'V_KEN', name: 'Kent', lon: 0.9, lat: 51.25, terrain: 'plains', profile: [2, 2, 0, 1] },
+  { id: 'V_EAN', name: 'Anglia Oriental', lon: 1.0, lat: 52.5, terrain: 'plains', profile: [2, 3, 0, 0] },
+  { id: 'V_MER', name: 'Mercia', lon: -1.7, lat: 52.6, terrain: 'plains', profile: [3, 3, 0, 1] },
+  { id: 'V_NOR', name: 'Northumbria (Jorvik)', lon: -1.1, lat: 54.0, terrain: 'plains', profile: [3, 2, 0, 1] },
+  { id: 'V_BER', name: 'Bernicia', lon: -2.0, lat: 55.2, terrain: 'mountains', profile: [1, 1, 0, 0] },
+  { id: 'V_COR', name: 'Cornualles', lon: -4.7, lat: 50.45, terrain: 'mountains', profile: [1, 1, 0, 1] },
+  // Gales, Escocia y las islas
+  { id: 'V_GWY', name: 'Gwynedd', lon: -3.8, lat: 52.9, terrain: 'mountains', profile: [1, 1, 0, 0] },
+  { id: 'V_DEH', name: 'Deheubarth', lon: -4.0, lat: 51.9, terrain: 'mountains', profile: [1, 1, 0, 0] },
+  { id: 'V_STR', name: 'Strathclyde', lon: -4.3, lat: 55.6, terrain: 'mountains', profile: [1, 1, 0, 0] },
+  { id: 'V_ALB', name: 'Alba (pictos)', lon: -3.4, lat: 56.5, terrain: 'mountains', profile: [2, 1, 0, 0] },
+  { id: 'V_DAL', name: 'Dál Riata', lon: -5.2, lat: 56.5, terrain: 'mountains', profile: [1, 1, 0, 0] },
+  { id: 'V_FOR', name: 'Fortriu', lon: -4.3, lat: 57.5, terrain: 'mountains', profile: [1, 1, 0, 0] },
+  { id: 'V_ORK', name: 'Orcadas', lon: -3.0, lat: 59.0, island: true, terrain: 'plains', profile: [2, 1, 0, 0] },
+  // Irlanda
+  { id: 'V_DUB', name: 'Dyflin (Dublín)', lon: -6.4, lat: 53.35, terrain: 'plains', profile: [3, 1, 0, 1] },
+  { id: 'V_ULA', name: 'Ulaid', lon: -7.0, lat: 54.1, terrain: 'plains', profile: [1, 2, 0, 0] },
+  { id: 'V_CON', name: 'Connacht', lon: -8.9, lat: 53.7, terrain: 'plains', profile: [1, 2, 0, 0] },
+  { id: 'V_MUN', name: 'Munster', lon: -8.5, lat: 52.4, terrain: 'plains', profile: [1, 2, 0, 0] },
+  { id: 'V_LEI', name: 'Leinster', lon: -7.0, lat: 52.7, terrain: 'plains', profile: [1, 2, 0, 0] },
+];
+
 // ---------- Todos los mapas históricos ----------
 
 // replaced: países actuales que el mapa sustituye por completo (se ocultan en ese mapa).
@@ -218,6 +301,11 @@ export const HISTORIC_MAPS = {
     replaced: list(`
       ITA AUT SVN HRV BIH SRB MNE XKX ALB MKD GRC BGR ROU HUN MDA
       TUR CYP XNC GEO ARM AZE SYR LBN ISR PSE JOR IRQ KWT IRN`),
+  },
+  vikings: {
+    prefix: 'V_',
+    regions: VIKING_REGIONS,
+    replaced: list('NOR SWE DNK FIN GBR IRL NLD BEL LUX EST LVA LTU'),
   },
 };
 

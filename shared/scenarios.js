@@ -123,6 +123,17 @@ export const SCENARIOS = {
     // Las enormes regiones de Persia (Carmania, Gedrosia...) cuentan como mucho esto para la dominación.
     maxArea: 150_000,
   },
+  vikings: {
+    label: '🪓 Era vikinga (Ragnar Lodbrok, 850)',
+    description: 'La época de Ragnar Lodbrok: Kattegat, Hedeby, Kaupang, Uppsala y los demás reinos del norte contra Wessex, Mercia, Northumbria, los francos de París, los irlandeses, los pictos y los pueblos del Báltico.',
+    countries: historicIds('vikings'),
+    era: 'vikings',
+    featured: ['V_KAT', 'V_HED', 'V_KAU', 'V_UPP', 'V_LEJ', 'V_TRO', 'V_BIR', 'V_DUB', 'V_WES', 'V_MER', 'V_NOR', 'V_EAN',
+      'V_PAR', 'V_DOR', 'V_ALB', 'V_NOV'],
+    allowNeighbors: true,
+    // Las tierras de los samis, Kvenland y Nóvgorod son enormes y están casi vacías.
+    maxArea: 80_000,
+  },
 };
 export const SCENARIO_IDS = Object.keys(SCENARIOS);
 export const DEFAULT_SCENARIO = 'world';

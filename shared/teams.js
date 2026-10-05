@@ -19,6 +19,7 @@ const SIDE_NAMES = {
   greece: ['Liga del Peloponeso', 'Liga de Delos'],
   sengoku: ['Ejército del Oeste', 'Ejército del Este'],
   rome: ['Imperio romano', 'Partos y aliados'],
+  vikings: ['Vikingos', 'Reinos cristianos'],
 };
 
 // Países históricos de cada bando: quien no elija país recibe uno de los suyos.
@@ -31,6 +32,8 @@ const SIDE_COUNTRIES = {
   sengoku: [['J_MOR', 'J_UKI', 'J_SHI', 'J_CHO', 'J_ASA', 'J_AZA', 'J_OTO'], ['J_TOK', 'J_DAT', 'J_ODA', 'J_HOJ', 'J_MOG', 'J_SAT', 'J_IMA']],
   rome: [['R_ROM', 'R_BIZ', 'R_ATE', 'R_ANT', 'R_EFE', 'R_JER', 'R_TES', 'R_SAR', 'R_AQU', 'R_CAP'],
     ['R_CTE', 'R_PRS', 'R_ECB', 'R_HEC', 'R_SUS', 'R_ADI', 'R_ATR', 'R_ARM', 'R_IBE', 'R_CRP']],
+  vikings: [['V_KAT', 'V_HED', 'V_KAU', 'V_UPP', 'V_LEJ', 'V_TRO', 'V_BIR', 'V_RIB', 'V_ORK', 'V_DUB'],
+    ['V_WES', 'V_MER', 'V_NOR', 'V_EAN', 'V_KEN', 'V_PAR', 'V_ROU', 'V_AQU', 'V_ALB', 'V_MUN']],
 };
 
 /** Países del bando `team` en ese mapa (solo en «Dos bandos»). */

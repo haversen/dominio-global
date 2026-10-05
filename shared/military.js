@@ -95,6 +95,11 @@ const ERA_SPEEDS = {
     infantry: 8, mech: 7, specops: 10, tank: 16, heavytank: 13, mbt: 7,
     aircraft: 8, bomber: 4, jet: 5, navy: 18, submarine: 16, carrier: 13,
   },
+  // Vikingos: a pie se va despacio, pero los barcos largos son los más rápidos de la época.
+  vikings: {
+    infantry: 7, mech: 6, specops: 8, tank: 14, heavytank: 12, mbt: 10,
+    aircraft: 7, bomber: 6, jet: 3, navy: 22, submarine: 20, carrier: 18,
+  },
 };
 
 /** Velocidad de una unidad (km/h) en la época de un mapa (o la normal). */
