@@ -70,3 +70,72 @@ test('bots: no pueden pasar de 16 jugadores en total', () => {
   for (const p of room.players.values()) if (p.id !== host.id) p.ready = true;
   assert.throws(() => rm.start(room, host), { code: 'INVALID_SETTINGS' });
 });
+
+test('bots: los de nivel difícil defienden su capital; los fáciles no', async () => {
+  const { declareWar } = await import('../server/diplomacy.js');
+  const { battleOdds, COUNTRIES } = await import('../server/game.js');
+  const held = { easy: 0, hard: 0 };
+  for (const level of ['easy', 'hard']) {
+    for (let trial = 0, attempt = 0; trial < 6 && attempt < 40; attempt++) {
+      const rm = new RoomManager();
+      const t = tok(200 + attempt + (level === 'hard' ? 50 : 0));
+      const { room, player: host } = rm.createRoom(t, 'Humana');
+      rm.attachSocket(t, 's');
+      rm.updateSettings(room, host, { bots: 1, botLevel: level, fogOfWar: false, troopPace: 'fast', winDomination: false, winTimeLimit: true });
+      rm.start(room, host);
+      const g = room.game;
+      const bot = [...room.players.values()].find((p) => p.bot);
+      const capital = g.homes[bot.id];
+      // La humana se queda con un vecino de la capital del bot, le declara la guerra y ataca con lo justo para ganar.
+      const from = COUNTRIES.get(capital).neighbors.find((n) => g.countries[n] && !g.countries[n].owner
+        && !COUNTRIES.get(capital).sea.includes(n));
+      if (!from) continue; // capital en una isla: se prueba con otra partida
+      trial++;
+      g.countries[from].owner = host.id;
+      declareWar(g, host.id, bot.id, Date.now());
+      g.players[bot.id].resources.money = 3000;
+      let army = { ...g.countries[capital].units };
+      for (const k of Object.keys(army)) army[k] = 0;
+      for (army.infantry = 1; battleOdds(g, host.id, from, capital, army) < 1.3; army.infantry++);
+      g.countries[from].units = { ...army };
+      assert.equal(rm.moveArmy(room, host, from, capital, army).error, undefined);
+      const start = Date.now();
+      for (let s = 0; s <= 10 * 60_000 && g.armies.some((a) => a.owner === host.id); s += 1_000) rm.tick(start + s);
+      if (g.countries[capital].owner === bot.id) held[level]++;
+    }
+  }
+  assert.ok(held.hard >= 4, `difícil aguanta ${held.hard}/6`);
+  assert.ok(held.easy <= 2, `fácil aguanta ${held.easy}/6`);
+});
+
+test('bots: la dificultad se elige en la sala', async () => {
+  const { SETTINGS_SCHEMA } = await import('../shared/settings.js');
+  const { BOT_LEVEL_IDS } = await import('../server/bots.js');
+  assert.deepEqual(SETTINGS_SCHEMA.botLevel.options, BOT_LEVEL_IDS);
+  assert.equal(SETTINGS_SCHEMA.botLevel.default, 'normal');
+});
+
+test('bots: en difícil se alían y van a la guerra contra quien se escapa', async () => {
+  const { COUNTRIES } = await import('../server/game.js');
+  const { relationOf } = await import('../shared/diplomacy.js');
+  const rm = new RoomManager();
+  const { room, player: host } = rm.createRoom(tok(300), 'Líder');
+  rm.attachSocket(tok(300), 's');
+  rm.updateSettings(room, host, { bots: 3, botLevel: 'hard', fogOfWar: false, winDomination: false, winTimeLimit: true, timeLimitMinutes: 120 });
+  rm.start(room, host);
+  const g = room.game;
+  const bots = [...room.players.values()].filter((p) => p.bot);
+  // La humana se queda con medio mundo (sin tropas), incluidos los vecinos de cada bot.
+  for (const [id, c] of Object.entries(g.countries)) {
+    const nextToBot = bots.some((b) => COUNTRIES.get(g.homes[b.id]).neighbors.includes(id));
+    if (!c.owner && (nextToBot || Math.random() < 0.5)) {
+      c.owner = host.id;
+      for (const t of Object.keys(c.units)) c.units[t] = 0;
+    }
+  }
+  const start = Date.now();
+  for (let s = 0; s <= 10 * 60_000; s += 1_000) rm.tick(start + s);
+  const rel = (a, b) => relationOf(g.relations, a, b).state;
+  assert.ok(bots.some((b) => rel(b.id, host.id) === 'war'), 'alguno declara la guerra a la líder');
+  assert.ok(bots.some((a) => bots.some((b) => a !== b && rel(a.id, b.id) === 'alliance')), 'los bots se alían entre ellos');
+});

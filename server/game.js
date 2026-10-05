@@ -810,6 +810,42 @@ export function checkEnd(game, now = Date.now()) {
   return game.result;
 }
 
+/** Todo lo que influye en una batalla de `owner` desde `fromId` contra `toId` (lo usan las batallas y los bots). */
+function battleContext(game, owner, fromId, toId) {
+  const target = game.countries[toId];
+  const defender = target.owner;
+  const attackerTree = treeBonus(game.players[owner]?.unlocked);
+  const defenderTree = defender ? treeBonus(game.players[defender]?.unlocked) : null;
+  return {
+    terrain: terrainOf(toId),
+    capital: Boolean(defender && game.homes[defender] === toId),
+    level: target.level,
+    amphibious: (COUNTRIES.get(fromId).sea.includes(toId) || isNavalRoute(COUNTRIES.get(fromId), COUNTRIES.get(toId)))
+      && !attackerTree.amphibious,
+    attackerMods: attackerTree.attack,
+    defenderMods: defenderTree?.defense ?? {},
+    attackerSupply: supplyOf(game, owner),
+    defenderSupply: defender ? supplyOf(game, defender) : {},
+    attackBonus: techBonus.attack(game.players[owner]?.tech) * bonusOf(game, owner).attack,
+    defenseBonus: (defender ? techBonus.defense(game.players[defender]?.tech) * bonusOf(game, defender).defense : 1)
+      * bunkerFactor(target.buildings),
+  };
+}
+
+/**
+ * Batalla prevista (sin azar) si `owner` ataca `toId` con `units` desde `fromId`, contra `defenders`
+ * (por defecto, las tropas que hay ahora). Devuelve la razón ataque / defensa: > 1 gana el atacante.
+ */
+export function battleOdds(game, owner, fromId, toId, units, defenders = game.countries[toId].units) {
+  const r = resolveBattle(units, defenders, battleContext(game, owner, fromId, toId), () => 0.5);
+  return r.attackPower / Math.max(0.01, r.defensePower);
+}
+
+/** Lo que tardaría en llegar un ejército de `owner` (ms), con la velocidad y la logística de ese jugador. */
+export function armyTravelMs(game, owner, fromId, toId, units) {
+  return travelMs(countriesFor(game).get(fromId), countriesFor(game).get(toId), units, playerSpeed(game, owner), speedMods(game, owner));
+}
+
 function arrive(game, army, now, rng) {
   const target = game.countries[army.to];
   if (target.owner === army.owner) {
@@ -845,22 +881,7 @@ function arrive(game, army, now, rng) {
   }
 
   const before = { ...target.units };
-  const attackerTree = treeBonus(game.players[army.owner]?.unlocked);
-  const defenderTree = defender ? treeBonus(game.players[defender]?.unlocked) : null;
-  const result = resolveBattle(army.units, target.units, {
-    terrain: terrainOf(army.to),
-    capital: Boolean(defender && game.homes[defender] === army.to),
-    level: target.level,
-    amphibious: (COUNTRIES.get(army.from).sea.includes(army.to) || isNavalRoute(COUNTRIES.get(army.from), COUNTRIES.get(army.to)))
-      && !attackerTree.amphibious,
-    attackerMods: attackerTree.attack,
-    defenderMods: defenderTree?.defense ?? {},
-    attackerSupply: supplyOf(game, army.owner),
-    defenderSupply: defender ? supplyOf(game, defender) : {},
-    attackBonus: techBonus.attack(game.players[army.owner]?.tech) * bonusOf(game, army.owner).attack,
-    defenseBonus: (defender ? techBonus.defense(game.players[defender]?.tech) * bonusOf(game, defender).defense : 1)
-      * bunkerFactor(target.buildings),
-  }, rng);
+  const result = resolveBattle(army.units, target.units, battleContext(game, army.owner, army.from, army.to), rng);
 
   const event = {
     id: ++game.seq,

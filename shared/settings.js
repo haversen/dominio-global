@@ -61,6 +61,17 @@ export const SETTINGS_SCHEMA = {
     labels: { 0: 'Ninguno' },
     default: 0,
   },
+  // Cómo juegan los bots (server/bots.js, BOT_LEVELS). Fácil: atacan poco, no comercian ni se defienden.
+  // Normal: defienden lo atacado, comercian y llevan tropas al frente. Difícil: además mandan refuerzos,
+  // atacan en varios frentes y se alían contra el que va ganando.
+  botLevel: {
+    label: 'Dificultad de los bots',
+    type: 'select',
+    options: ['easy', 'normal', 'hard'],
+    labels: { easy: 'Fácil', normal: 'Normal', hard: 'Difícil' },
+    default: 'normal',
+    dependsOn: 'bots',
+  },
   capitalCapture: {
     label: 'Al tomar la capital de un jugador',
     type: 'select',

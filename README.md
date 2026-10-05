@@ -169,7 +169,19 @@ Si una misión falla, el espía puede ser capturado y se anuncia quién lo envi�
 
 ### Bots (opcionales)
 
-En la sala se pueden añadir de 0 a 5 **bots** (por defecto ninguno) que juegan con las mismas reglas: gestionan su economía, investigan, construyen, protegen su capital, atacan, declaran la guerra a vecinos más débiles, responden a la diplomacia y votan en la ONU. Su carácter depende de la dificultad elegida para la IA.
+En la sala se pueden añadir **bots** (por defecto ninguno) que juegan con las mismas reglas que un jugador: gestionan su economía, investigan, construyen, protegen su capital, atacan, responden a la diplomacia y votan en la ONU. Su **dificultad** se elige en la sala (es independiente de la IA de los países neutrales):
+
+| | Fácil | Normal | Difícil |
+|---|---|---|---|
+| Piensa cada | 8 s | 4 s | 2,5 s |
+| Calcula las batallas | a ojo (sin capital, murallas ni tecnología) | como el servidor | como el servidor |
+| Ataques | 1 cada 40 s | 1 cada 12 s | hasta 3 a la vez cada 5 s |
+| Defensa | no | recluta donde le van a atacar y deja guarnición ante los ejércitos que se acercan | además manda refuerzos de los vecinos que llegan a tiempo |
+| Tropas del interior | se quedan quietas | avanzan hacia el frente | avanzan hacia el frente |
+| Bolsa | no | vende lo que le sobra y compra petróleo | igual |
+| Diplomacia | no declara guerras | guerra a vecinos más débiles y paz si pierde | además se alía con los demás contra quien se escapa y le declara la guerra si tiene ejército |
+
+En 90 partidas simuladas de bots contra bots (Europa, 30 minutos, dos de cada nivel), los difíciles acaban primeros en 47, los normales en 31 y los fáciles en 12.
 
 ### Perfil, logros y clasificación global
 
