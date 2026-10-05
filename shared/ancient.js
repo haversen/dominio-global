@@ -208,8 +208,8 @@ const ROME_REGIONS = [
 // ---------- Era vikinga (hacia el 850, la época de Ragnar Lodbrok): reinos, jarls y pueblos del norte ----------
 
 const VIKING_REGIONS = [
-  // Dinamarca (Kattegat: la costa del estrecho del mismo nombre, al norte de Jutlandia)
-  { id: 'V_KAT', name: 'Kattegat', lon: 10.0, lat: 56.9, terrain: 'plains', profile: [3, 2, 0, 1] },
+  // Dinamarca
+  { id: 'V_VEN', name: 'Vendsyssel', lon: 10.0, lat: 56.9, terrain: 'plains', profile: [2, 2, 0, 1] },
   { id: 'V_ARO', name: 'Aros', lon: 9.6, lat: 56.15, terrain: 'plains', profile: [2, 2, 0, 1] },
   { id: 'V_RIB', name: 'Ribe', lon: 8.9, lat: 55.4, terrain: 'plains', profile: [3, 2, 0, 1] },
   { id: 'V_HED', name: 'Hedeby', lon: 9.6, lat: 54.5, terrain: 'plains', profile: [4, 1, 0, 2] },
@@ -220,7 +220,8 @@ const VIKING_REGIONS = [
   { id: 'V_KAU', name: 'Kaupang (Vestfold)', lon: 10.0, lat: 59.4, terrain: 'plains', profile: [3, 1, 0, 2] },
   { id: 'V_AGD', name: 'Agder', lon: 7.8, lat: 58.7, terrain: 'mountains', profile: [1, 1, 0, 1] },
   { id: 'V_ROG', name: 'Rogaland (Avaldsnes)', lon: 6.2, lat: 59.0, terrain: 'mountains', profile: [2, 1, 0, 1] },
-  { id: 'V_HOR', name: 'Hordaland', lon: 6.5, lat: 60.4, terrain: 'mountains', profile: [1, 1, 0, 1] },
+  // Kattegat, el pueblo de Ragnar en la serie «Vikingos»: un fiordo de la costa oeste de Noruega.
+  { id: 'V_KAT', name: 'Kattegat (Hordaland)', lon: 6.5, lat: 60.4, terrain: 'mountains', profile: [3, 2, 0, 1] },
   { id: 'V_SOG', name: 'Sogn', lon: 6.8, lat: 61.4, terrain: 'mountains', profile: [1, 1, 0, 0] },
   { id: 'V_MOR', name: 'Møre', lon: 8.0, lat: 62.6, terrain: 'mountains', profile: [1, 1, 0, 0] },
   { id: 'V_OPP', name: 'Oppland', lon: 10.0, lat: 61.2, terrain: 'mountains', profile: [1, 2, 0, 1] },

@@ -210,7 +210,8 @@ test('mapa vikingo: Kattegat, Hedeby, Wessex y los demás, con tropas de la épo
   for (const id of SCENARIOS.vikings.countries) {
     for (const n of COUNTRIES.get(id).neighbors) assert.ok(inScenario('vikings', n), `${id} linda con ${n}`);
   }
-  assert.ok(COUNTRIES.get('V_KAT').coastal && COUNTRIES.get('V_KAT').neighbors.includes('V_ARO'), 'Kattegat, en la costa de Jutlandia');
+  assert.ok(COUNTRIES.get('V_KAT').coastal && COUNTRIES.get('V_KAT').neighbors.includes('V_ROG'), 'Kattegat, en los fiordos de Noruega');
+  assert.ok(COUNTRIES.get('V_VEN').neighbors.includes('V_ARO'), 'Vendsyssel, al norte de Jutlandia');
   assert.ok(COUNTRIES.get('V_KEN').sea.includes('V_FLA'), 'de Kent a Flandes se cruza en barco');
   assert.ok(COUNTRIES.get('V_WES').neighbors.includes('V_MER'), 'Wessex linda con Mercia');
   // Por mar se va mucho más rápido que a pie: un drakkar llega antes que los guerreros andando.
