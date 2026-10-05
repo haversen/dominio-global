@@ -264,31 +264,62 @@ const VARIANTS = {
 };
 
 const polygonsOf = (g) => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates);
-// polygon-clipping da los anillos exteriores en sentido antihorario; d3-geo los quiere al revés.
-const toD3 = (multi) => ({ type: 'MultiPolygon', coordinates: multi.map((poly) => poly.map((ring) => [...ring].reverse())) });
+// El recorte se dibuja proyectando cada vértice y uniéndolos con rectas (sin la geometría esférica de d3,
+// que con los anillos de polygon-clipping podía rellenar el mundo entero en lugar del país).
+const project = (p) => projection(p).map((v) => Math.round(v * 10) / 10);
+const planarPath = (multi) => multi.map((poly) => poly.map((ring) => `M${ring.slice(0, -1).map((p) => project(p).join(',')).join('L')}Z`).join('')).join('');
+// Centro (ponderado por superficie) y ancho del anillo exterior más grande, ya proyectado.
+function planarMain(multi) {
+  let best = null;
+  for (const poly of multi) {
+    const pts = poly[0].map(project);
+    const area = ringArea(pts);
+    if (!best || area > best.area) best = { pts, area };
+  }
+  let a = 0;
+  let x = 0;
+  let y = 0;
+  best.pts.forEach(([x0, y0], i) => {
+    const [x1, y1] = best.pts[(i + 1) % best.pts.length];
+    const k = x0 * y1 - x1 * y0;
+    a += k;
+    x += (x0 + x1) * k;
+    y += (y0 + y1) * k;
+  });
+  const xs = best.pts.map((p) => p[0]);
+  return { cx: x / (3 * a), cy: y / (3 * a), lw: Math.max(...xs) - Math.min(...xs) };
+}
 
 const variants = {};
 for (const [name, list] of Object.entries(VARIANTS)) {
   variants[name] = {};
   for (const [id, box] of Object.entries(list)) {
     const f = geo.features.find((x, i) => idx[i]?.id === id);
-    const source = polygonsOf(f.geometry);
-    const inside = toD3(polygonClipping.intersection(source, [box]));
-    const rest = toD3(polygonClipping.difference(source, [box]));
-    const main = mainPolygon({ geometry: inside });
-    const [cx, cy] = path.centroid(main);
-    const [[x0], [x1]] = path.bounds(main);
-    const [lon, lat] = geoCentroid(main);
+    // Chukotka cruza el antimeridiano: se pasa a longitudes de 180° a 200° para que el contorno no salte
+    // de un lado al otro del mapa, y al dibujar el resto se devuelve a su sitio.
+    const source = polygonsOf(f.geometry).map((poly) => poly.map((ring) => ring.map(([lon, lat]) => [lon < 0 ? lon + 360 : lon, lat])));
+    const inside = polygonClipping.intersection(source, [box]);
+    const restAll = polygonClipping.difference(source, [box]);
+    const band = (a, b) => [[a, -90], [b, -90], [b, 90], [a, 90], [a, -90]];
+    const rest = [
+      ...polygonClipping.intersection(restAll, [band(-180, 180)]),
+      ...polygonClipping.intersection(restAll, [band(180, 360)])
+        .map((poly) => poly.map((ring) => ring.map(([lon, lat]) => [lon - 360, lat]))),
+    ];
+    const { cx, cy, lw } = planarMain(inside);
+    const [lon, lat] = projection.invert([cx, cy]);
+    const d = planarPath(inside);
+    const restD = planarPath(rest);
     variants[name][id] = {
-      d: path(inside),
-      ds: simplifiedPath(path(inside)),
+      d,
+      ds: simplifiedPath(d),
       cx: Math.round(cx * 10) / 10,
       cy: Math.round(cy * 10) / 10,
-      lw: Math.round(x1 - x0),
+      lw: Math.round(lw),
       lon: Math.round(lon * 100) / 100,
       lat: Math.round(lat * 100) / 100,
-      rest: path(rest), // lo que queda fuera del mapa
-      rests: simplifiedPath(path(rest)),
+      rest: restD, // lo que queda fuera del mapa
+      rests: simplifiedPath(restD),
     };
   }
 }
