@@ -114,13 +114,13 @@ export const SCENARIOS = {
   },
   rome: {
     label: '🦅 Imperio romano (117 d. C.)',
-    description: 'El Imperio romano de Trajano en su máxima extensión, dividido por sus grandes ciudades (Roma, Bizancio, Alejandría, Cartago, Antioquía…), contra el Imperio parto, los kushanos, los germanos, los sármatas, los dacios libres, Armenia, Kush y los caledonios.',
+    description: 'De Roma a Persia: Italia, los Balcanes, Grecia, Anatolia y el Levante romanos, divididos por sus grandes ciudades (Roma, Bizancio, Atenas, Éfeso, Antioquía, Jerusalén…), contra el Imperio parto, Armenia, los reinos del Cáucaso y los dacios libres.',
     countries: historicIds('rome'),
     era: 'rome',
-    featured: ['R_ROM', 'R_BIZ', 'R_ALE', 'R_CAR', 'R_ANT', 'R_CTE', 'R_LUG', 'R_LON', 'R_ATE', 'R_MAR', 'R_ARM', 'R_SAR',
-      'R_EFE', 'R_PRS', 'R_BOS', 'R_BAC'],
+    featured: ['R_ROM', 'R_BIZ', 'R_ATE', 'R_ANT', 'R_EFE', 'R_JER', 'R_TES', 'R_SAR', 'R_CTE', 'R_ECB', 'R_PRS', 'R_ARM',
+      'R_PAL', 'R_CAP', 'R_NCM', 'R_SUS'],
     allowNeighbors: true,
-    // Desiertos y estepas enormes (el Sáhara, Arabia, Kush...) cuentan como mucho esto para la dominación.
+    // Las enormes regiones de Persia (Carmania, Gedrosia...) cuentan como mucho esto para la dominación.
     maxArea: 150_000,
   },
 };

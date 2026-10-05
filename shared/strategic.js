@@ -10,12 +10,12 @@ export const STRATEGIC = {
   rareEarths: {
     label: 'Tierras raras', icon: '💎',
     countries: ['CHN', 'AUS', 'USA', 'MMR', 'IND', 'RUS', 'VNM', 'BRA', 'MYS', 'COD', 'ZAF', 'GRL', 'G_ATE', 'G_TRA', 'J_AMA', 'J_UES',
-      'R_SAR', 'R_AST', 'R_NOR', 'R_MER', 'R_BAC'],
+      'R_SAR', 'R_NOR', 'R_PER'],
   },
   rubber: {
     label: 'Caucho', icon: '🌳',
     countries: ['THA', 'IDN', 'VNM', 'MYS', 'IND', 'CIV', 'LBR', 'CHN', 'BRA', 'GTM', 'PHL', 'LKA', 'NGA', 'KHM', 'MMR', 'G_CIL', 'G_LID', 'J_SAI', 'J_JUR',
-      'R_QUE', 'R_MAR', 'R_VEN', 'R_COL', 'R_SAL', 'R_CON'],
+      'R_COL', 'R_SAL', 'R_CRP', 'R_TRP'],
   },
 };
 export const STRATEGIC_TYPES = Object.keys(STRATEGIC);

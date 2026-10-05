@@ -26,7 +26,6 @@ const SEA_LINK_KM = 45; // dos costas más cerca que esto se conectan por mar
 
 // De qué países actuales (código numérico ISO o nombre) sale la tierra de cada mapa.
 // clip: solo se usa la parte del país dentro de ese polígono (lon, lat).
-const EUROPE_BOX = [[-11, 35], [40, 35], [40, 61], [-11, 61], [-11, 35]];
 const SOURCES = {
   greece: {
     lat: 39,
@@ -41,40 +40,16 @@ const SOURCES = {
     groups: [['392'], ['410', '408'], ['156']],
   },
   rome: {
-    lat: 42,
+    lat: 39,
     countries: [
-      // Europa
-      '380', '674', '250', '492', '724', '020', '620', '826', '372', '056', '528', '442', '276', '756', '040', '438',
-      '208', '616', '203', '703', '348', '705', '191', '070', '688', '499', 'Kosovo', '008', '807', '300', '100',
-      '642', '498', '804', '112', '440', '643', '470',
-      // Asia
-      '792', '196', 'N. Cyprus', '268', '051', '031', '760', '422', '376', '275', '400', '368', '414', '682',
-      '364', '795', '004',
-      // África
-      '818', '434', '788', '012', '504', '729',
+      // Italia, los Alpes orientales, el Danubio y los Balcanes
+      '380', '674', '470', '040', '705', '191', '070', '688', '499', 'Kosovo', '008', '807', '300', '100', '642',
+      '348', '498',
+      // Anatolia, el Cáucaso, el Levante, Mesopotamia y Persia
+      '792', '196', 'N. Cyprus', '268', '051', '031', '760', '422', '376', '275', '400', '368', '414', '364',
     ],
-    // De los países enormes solo entra la parte que conocían los romanos y sus vecinos.
-    clip: {
-      643: [[27, 41], [48, 41], [48, 52], [27, 52], [27, 41]], // Rusia: estepa del mar Negro y el Cáucaso
-      682: [[34, 25.5], [50, 25.5], [50, 33], [34, 33], [34, 25.5]], // Arabia Saudí: el norte
-      '004': [[60, 29], [70, 29], [70, 39], [60, 39], [60, 29]], // Afganistán: Bactria y Aria
-      434: [[9, 24], [26, 24], [26, 34], [9, 34], [9, 24]], // Libia: hasta el Fezán
-      '012': [[-3, 31], [9, 31], [9, 38], [-3, 38], [-3, 31]], // Argelia: el norte, sin el Sáhara
-      504: [[-14, 29], [0, 29], [0, 37], [-14, 37], [-14, 29]], // Marruecos: sin el Sáhara Occidental
-      729: [[21, 15], [39, 15], [39, 23], [21, 23], [21, 15]], // Sudán: Nubia y Meroe
-      // Sin territorios de ultramar (Guayana Francesa, Canarias, Azores, Madeira, Caribe...).
-      250: EUROPE_BOX, 724: EUROPE_BOX, 620: EUROPE_BOX, 528: EUROPE_BOX, 208: EUROPE_BOX, 826: EUROPE_BOX,
-    },
-    // África se reparte por separado de Europa y Asia (ninguna región cruza el Estrecho ni el Sinaí).
-    groups: [['818', '434', '788', '012', '504', '729']],
   },
 };
-// Lo que no esté en ningún grupo forma un grupo más (Europa y Asia en el mapa romano).
-for (const cfg of Object.values(SOURCES)) {
-  if (!cfg.groups) continue;
-  const rest = cfg.countries.filter((c) => !cfg.groups.flat().includes(c));
-  if (rest.length) cfg.groups.push(rest);
-}
 
 const projection = geoNaturalEarth1().fitExtent([[10, 10], [WIDTH - 10, HEIGHT - 10]], { type: 'Sphere' });
 const path = geoPath(projection).digits(2);
@@ -191,7 +166,7 @@ function buildEra(era) {
       console.log(`  (${era}: tierra sin capital cerca de ${(x / KX).toFixed(1)}, ${y.toFixed(1)}: va entera a la región más cercana)`);
       return null;
     }
-    const voronoi = Delaunay.from(own.map((s) => s.p)).voronoi([-200 * KX, -90, 200 * KX, 90]);
+    const voronoi = Delaunay.from(own.map((s) => s.p)).voronoi([0, -10, 200 * KX, 80]);
     return { land, own, group: land.group, cells: own.map((_, i) => voronoi.cellPolygon(i)) };
   }).filter(Boolean);
   const lost = landSeeds.filter((s) => !landmasses.some((m) => m.own.includes(s)));

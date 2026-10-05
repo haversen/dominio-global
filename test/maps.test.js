@@ -169,7 +169,7 @@ test('mapa samurái: clanes, Joseon y Ming, con tropas de la época', async () =
   applyEra(null);
 });
 
-test('mapa del Imperio romano: ciudades, partos y bárbaros, con tropas de la época', async () => {
+test('mapa del Imperio romano: de Roma a Persia, con tropas de la época', async () => {
   const { applyEra, unInfo } = await import('../shared/eras.js');
   const { UNITS } = await import('../shared/military.js');
   const { sideCountries } = await import('../shared/teams.js');
@@ -181,15 +181,15 @@ test('mapa del Imperio romano: ciudades, partos y bárbaros, con tropas de la é
   }
   assert.ok(COUNTRIES.get('R_ROM').neighbors.includes('R_CAP'), 'Roma linda con Capua');
   assert.ok(COUNTRIES.get('R_BIZ').neighbors.includes('R_FIL'), 'Bizancio linda con Filipópolis');
-  assert.ok(COUNTRIES.get('R_HIS').sea.includes('R_VOL'), 'el estrecho de Gibraltar se cruza en barco');
-  assert.ok(COUNTRIES.get('R_LON').sea.includes('R_LUT'), 'el canal de la Mancha se cruza en barco');
+  assert.ok(COUNTRIES.get('R_SIR').sea.includes('R_REG'), 'el estrecho de Mesina se cruza en barco');
+  assert.ok(!inScenario('rome', 'ESP') && !inScenario('rome', 'EGY'), 'ni Hispania ni Egipto están en el mapa');
   // Por las calzadas, de Roma a Capua se tarda menos de dos días a pie.
   const legion = { ...emptyUnits(), infantry: 1 };
   const hours = travelMs(COUNTRIES.get('R_ROM'), COUNTRIES.get('R_CAP'), legion, 1) / 3_600_000;
   assert.ok(hours > 5 && hours < 48, `de Roma a Capua: ${hours} h`);
-  // El Sáhara y las estepas no cuentan como media Europa para la dominación.
-  game.countries.R_MER.owner = 'a';
-  assert.ok(currentStandings(game).find((r) => r.id === 'a').areaPct < 3);
+  // Las enormes regiones de Persia no cuentan como media Europa para la dominación.
+  game.countries.R_CRM.owner = 'a';
+  assert.ok(currentStandings(game).find((r) => r.id === 'a').areaPct < 5);
   assert.match(launchStrike(game, 'a', 'nuke', 'R_ROM', 0).error, /época|marcha/);
   assert.deepEqual(sideCountries('sides', 'rome', 1).filter((id) => !inScenario('rome', id)), []);
   assert.deepEqual(sideCountries('sides', 'rome', 2).filter((id) => !inScenario('rome', id)), []);
