@@ -3,7 +3,7 @@
 import { WorldMap } from './map.js';
 import { $, h, toast, guardTaps, durationText, avatarEl } from './dom.js';
 import { leaderBonus, discountCost } from '/shared/leaders.js';
-import { inScenario, scenarioOf, eraOf } from '/shared/scenarios.js';
+import { inScenario, scenarioOf, eraOf, scenarioArea } from '/shared/scenarios.js';
 import { applyEra, weaponAllowed } from '/shared/eras.js';
 import { teamName, TEAM_ICONS } from '/shared/teams.js';
 import { STRATEGIC, strategicOf, needOf, hasAccess } from '/shared/strategic.js';
@@ -562,7 +562,7 @@ export class GameView {
       homeOf && h('span', { class: 'badge badge-host', title: CAPITAL_RULES[game.capitalRule ?? 'empire'].title },
         homeOf.id === me ? `★ Tu capital · ${CAPITAL_RULES[game.capitalRule ?? 'empire'].mine}` : `★ Capital de ${homeOf.name} · ${CAPITAL_RULES[game.capitalRule ?? 'empire'].theirs}`),
       h('dl', { class: 'stats' },
-        h('dt', {}, 'Superficie'), h('dd', {}, `${fmt.format(c.area)} km²`),
+        h('dt', {}, 'Superficie'), h('dd', {}, `${fmt.format(scenarioArea(game.scenario, c))} km²`),
         h('dt', {}, 'Terreno'), h('dd', { title: `Defensa ×${terrain.defense}` }, `${terrain.label}${c.coastal ? ' · costa' : ''}`),
         h('dt', {}, 'Desarrollo'), h('dd', {}, this.#levelPips(state.level)),
         state.developing && h('dt', {}, 'En obras'),
