@@ -175,3 +175,17 @@ test('la ONU tiene el nombre de su época', async () => {
   assert.match(unInfo('greece').name, /Anfictiónica/);
   assert.match(unInfo('sengoku').name, /Corte Imperial/);
 });
+
+test('mapa de Europa: Rusia es solo su parte europea (hasta los Urales)', async () => {
+  const { countriesFor } = await import('../server/game.js');
+  const europe = countriesFor({ scenario: 'europe' }).get('RUS');
+  const world = countriesFor({ scenario: 'world' }).get('RUS');
+  assert.ok(europe.lon < 60 && europe.lon > 30, `centro en la Rusia europea (${europe.lon})`);
+  assert.ok(world.lon > 80, 'en el mapa del mundo sigue siendo Rusia entera');
+  assert.ok(WORLD.variants.europe.RUS.d.length < world.d.length, 'el contorno está recortado');
+  assert.ok(WORLD.variants.europe.RUS.rest, 'el resto de Rusia se dibuja fuera del mapa');
+  // De Rusia a Ucrania se tarda lo normal entre vecinos, no lo que se tardaría desde Siberia.
+  const ukr = COUNTRIES.get('UKR');
+  assert.ok(distanceKm(europe, ukr) < 1500, `${distanceKm(europe, ukr)} km`);
+  assert.ok(distanceKm(world, ukr) > 3000);
+});

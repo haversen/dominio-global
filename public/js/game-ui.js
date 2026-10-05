@@ -206,10 +206,13 @@ export class GameView {
       if (this.scopeKey !== scopeKey) {
         this.scopeKey = scopeKey;
         const scenario = scenarioOf(game.scenario);
-        const focusIds = (scenario.countries ?? []).filter((id) => !scenario.areas?.[id]);
+        const variant = world.variants?.[scenario.variant] ?? null;
+        // Los países enormes (con superficie recortada) no cuentan para encuadrar, salvo si se dibujan recortados.
+        const focusIds = (scenario.countries ?? []).filter((id) => !scenario.areas?.[id] || variant?.[id]);
         // Tropas, materiales y tecnología con los nombres de la época del mapa.
         if (applyEra(eraOf(game.scenario))) this.#buildResourceBar();
         this.map.setEra(eraOf(game.scenario));
+        this.map.setVariant(variant);
         this.map.setScope((id) => playable(game, id), focusIds);
         if (game.phase === 'picking' || !game.homes[me]) this.map.showHome();
       }

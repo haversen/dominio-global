@@ -34,6 +34,14 @@ import { SPACE_STAGES, MISSIONS, FIRST_EVENT_MS, UN_FIRST_MS } from '../shared/w
 // Mapa del mundo generado por scripts/build-world.js.
 export const WORLD = JSON.parse(readFileSync(new URL('../shared/world.json', import.meta.url), 'utf8'));
 export const COUNTRIES = new Map(WORLD.countries.map((c) => [c.id, c]));
+// Mapas con países recortados (la Rusia europea en el mapa de Europa): mismo país, otro contorno y otro centro.
+const VARIANT_COUNTRIES = Object.fromEntries(Object.entries(WORLD.variants ?? {}).map(([name, list]) => {
+  const map = new Map(COUNTRIES);
+  for (const [id, v] of Object.entries(list)) map.set(id, { ...COUNTRIES.get(id), ...v });
+  return [name, map];
+}));
+/** Los países tal como son en el mapa de esta partida (para distancias y tiempos de viaje). */
+export const countriesFor = (game) => VARIANT_COUNTRIES[scenarioOf(game.scenario).variant] ?? COUNTRIES;
 // Superficie total de cada mapa (para el % de dominación).
 const TOTAL_AREA = Object.fromEntries(Object.keys(SCENARIOS).map((id) => [id,
   WORLD.countries.filter((c) => inScenario(id, c.id)).reduce((sum, c) => sum + scenarioArea(id, c), 0)]));
@@ -578,8 +586,8 @@ export function spy(game, playerId, mission, countryId, now = Date.now(), rng = 
 export function moveArmy(game, playerId, fromId, toId, rawUnits, now = Date.now()) {
   if (game.phase !== 'active') return { error: 'La partida todavía no está en marcha' };
   const source = game.countries[fromId];
-  const from = COUNTRIES.get(fromId);
-  const to = COUNTRIES.get(toId);
+  const from = countriesFor(game).get(fromId);
+  const to = countriesFor(game).get(toId);
   if (!source || !from || !to) return { error: 'País desconocido' };
   if (!playable(game, toId)) return { error: 'Ese país no forma parte de este mapa' };
   if (source.owner !== playerId) return { error: 'Solo puedes mover tropas desde tus países' };
@@ -729,7 +737,7 @@ export function tickGame(game, playerIds, now = Date.now(), rng = Math.random) {
     changed = true;
   }
 
-  if (tickAI(game, COUNTRIES, now)) changed = true;
+  if (tickAI(game, countriesFor(game), now)) changed = true;
   if (tickMarket(game, now)) changed = true;
   // Préstamos: caducan peticiones y se cobran los vencidos.
   const loanCount = game.loans?.length ?? 0;
@@ -821,8 +829,8 @@ function arrive(game, army, now, rng) {
     }
     if (rel !== 'war') {
       // Se firmó la paz mientras marchaban: dan media vuelta.
-      const from = COUNTRIES.get(army.to);
-      const back = COUNTRIES.get(army.from);
+      const from = countriesFor(game).get(army.to);
+      const back = countriesFor(game).get(army.from);
       game.armies.push({
         ...army,
         id: ++game.seq,

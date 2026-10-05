@@ -9,6 +9,7 @@ import { writeFileSync } from 'node:fs';
 import { feature, neighbors as topoNeighbors } from 'topojson-client';
 import { geoNaturalEarth1, geoPath, geoArea, geoGraticule10, geoCentroid } from 'd3-geo';
 import countriesLib from 'i18n-iso-countries';
+import polygonClipping from 'polygon-clipping';
 
 const require = createRequire(import.meta.url);
 const topology = require('world-atlas/countries-110m.json');
@@ -255,6 +256,43 @@ if (isolated.length || unreachable.length) {
   process.exit(1);
 }
 
+// ---------- Variantes: un país recortado para un mapa concreto ----------
+// En el mapa de Europa, Rusia es solo su parte europea (hasta los Urales): se dibuja recortada,
+// su centro (para distancias) está en la Rusia europea y el resto se ve apagado, fuera del mapa.
+const VARIANTS = {
+  europe: { RUS: [[-30, 35], [60, 35], [60, 82], [-30, 82], [-30, 35]] }, // lon, lat
+};
+
+const polygonsOf = (g) => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates);
+// polygon-clipping da los anillos exteriores en sentido antihorario; d3-geo los quiere al revés.
+const toD3 = (multi) => ({ type: 'MultiPolygon', coordinates: multi.map((poly) => poly.map((ring) => [...ring].reverse())) });
+
+const variants = {};
+for (const [name, list] of Object.entries(VARIANTS)) {
+  variants[name] = {};
+  for (const [id, box] of Object.entries(list)) {
+    const f = geo.features.find((x, i) => idx[i]?.id === id);
+    const source = polygonsOf(f.geometry);
+    const inside = toD3(polygonClipping.intersection(source, [box]));
+    const rest = toD3(polygonClipping.difference(source, [box]));
+    const main = mainPolygon({ geometry: inside });
+    const [cx, cy] = path.centroid(main);
+    const [[x0], [x1]] = path.bounds(main);
+    const [lon, lat] = geoCentroid(main);
+    variants[name][id] = {
+      d: path(inside),
+      ds: simplifiedPath(path(inside)),
+      cx: Math.round(cx * 10) / 10,
+      cy: Math.round(cy * 10) / 10,
+      lw: Math.round(x1 - x0),
+      lon: Math.round(lon * 100) / 100,
+      lat: Math.round(lat * 100) / 100,
+      rest: path(rest), // lo que queda fuera del mapa
+      rests: simplifiedPath(path(rest)),
+    };
+  }
+}
+
 countries.sort((a, b) => a.name.localeCompare(b.name, 'es'));
 const world = {
   width: WIDTH,
@@ -262,6 +300,7 @@ const world = {
   sphere: path({ type: 'Sphere' }),
   graticule: path(geoGraticule10()),
   countries: countries.map((c) => ({ ...c, neighbors: [...c.neighbors].sort(), sea: [...c.sea].sort() })),
+  variants,
 };
 
 const out = new URL('../shared/world.json', import.meta.url);

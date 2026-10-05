@@ -27,6 +27,7 @@ const TERRAIN_SYMBOLS = { mountains: 'mountains', jungle: 'trees', taiga: 'trees
 // Países enormes cuyo terreno de juego es «helado» pero que en su mayoría son bosque boreal.
 const VISUAL_TERRAIN = { RUS: 'taiga', CAN: 'taiga' };
 const OFFMAP_FILL = '#8a877e';
+const VARIANT_KEYS = ['d', 'ds', 'cx', 'cy', 'lw', 'lon', 'lat'];
 // Países neutrales (los controla la IA): todos del mismo gris para distinguirlos de los jugadores.
 const NEUTRAL_FILL = '#c4c3bb';
 const OWNER_MIX = 0.55; // cuánto color del dueño se mezcla con el terreno
@@ -516,6 +517,48 @@ export class WorldMap {
   /** Época del mapa (cambia los iconos de los ejércitos en marcha). */
   setEra(era) {
     this.era = era;
+  }
+
+  /**
+   * Países recortados para el mapa elegido (la Rusia europea en el mapa de Europa):
+   * cambia su contorno, su centro y su etiqueta, y el resto del país se ve apagado, fuera del mapa.
+   * list: { [countryId]: { d, ds, cx, cy, lw, lon, lat, rest, rests } } o null para volver al mapa normal.
+   */
+  setVariant(list = null) {
+    if (list === (this.variant ?? null)) return;
+    this.variantSaved ??= new Map();
+    for (const [id, saved] of this.variantSaved) this.#placeCountry(id, saved);
+    this.variantSaved.clear();
+    for (const el of this.variantRests ?? []) el.remove();
+    this.detailed = this.detailed.filter((x) => !this.variantRests?.includes(x.el));
+    this.variantRests = [];
+    this.variant = list;
+    for (const [id, v] of Object.entries(list ?? {})) {
+      const c = this.byId.get(id);
+      if (!c) continue;
+      this.variantSaved.set(id, Object.fromEntries(VARIANT_KEYS.map((k) => [k, c[k]])));
+      this.#placeCountry(id, v);
+      const rest = svg('path', { class: 'country offmap variant-rest', fill: OFFMAP_FILL });
+      this.paths.get(id).after(rest);
+      this.detailed.push({ el: rest, d: v.rest, ds: v.rests || v.rest });
+      this.variantRests.push(rest);
+    }
+    this.#updateDetail(true);
+  }
+
+  #placeCountry(id, v) {
+    const c = this.byId.get(id);
+    for (const k of VARIANT_KEYS) c[k] = v[k];
+    const entry = this.detailed.find((x) => x.el === this.paths.get(id));
+    if (entry) Object.assign(entry, { d: v.d, ds: v.ds || v.d });
+    const label = this.labels.find((l) => l.id === id);
+    if (label) {
+      label.el.setAttribute('x', v.cx);
+      label.el.setAttribute('y', v.cy);
+      for (const t of label.el.querySelectorAll('tspan')) t.setAttribute('x', v.cx);
+      label.widthUnits = v.lw;
+    }
+    this.badgeEls.get(id)?.g.setAttribute('transform', `translate(${v.cx} ${v.cy})`);
   }
 
   /** Países que no forman parte del mapa elegido (se ven apagados y no se pueden tocar). */

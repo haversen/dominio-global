@@ -45,6 +45,8 @@ export const SCENARIOS = {
     countries: EUROPE,
     // Solo cuenta la parte europea de Rusia para el % de dominación.
     areas: { RUS: 4_000_000, TUR: 300_000 },
+    // Rusia se dibuja solo hasta los Urales (variante «europe» de shared/world.json).
+    variant: 'europe',
   },
   asia: {
     label: '🌏 Solo Asia',

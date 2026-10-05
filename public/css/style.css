@@ -1524,3 +1524,6 @@ button.menu-option:hover { border-color: var(--accent); }
 .ping-icon { font-size: 28px; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(0,0,0,.45); stroke-width: 3px; }
 @keyframes ping-pulse { from { transform: scale(0.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
 .ping-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Parte de un país recortado que queda fuera del mapa (la Rusia asiática en el mapa de Europa) */
+.variant-rest { pointer-events: none; }
