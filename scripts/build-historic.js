@@ -1,4 +1,5 @@
-// Genera las regiones de los mapas históricos (antigua Grecia, Japón samurái...) y las añade a shared/world.json.
+// Genera las regiones de los mapas históricos (antigua Grecia, Japón samurái...) en shared/maps/<mapa>.json.
+// Van aparte de shared/world.json para que el navegador solo descargue el mapa que se juega.
 // Uso: npm run build:historic (lo ejecuta también npm run build:map)
 //
 // Se toma la costa detallada de Natural Earth (1:50m) de los países actuales de la zona y se reparte
@@ -7,7 +8,7 @@
 // la costa y las rutas marítimas cortas.
 
 import { createRequire } from 'node:module';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { feature } from 'topojson-client';
 import { geoNaturalEarth1, geoPath, geoArea } from 'd3-geo';
 import { Delaunay } from 'd3-delaunay';
@@ -316,17 +317,19 @@ function buildEra(era) {
 
 const pieceKm2 = (poly) => geoArea({ type: 'Polygon', coordinates: poly }) * EARTH_RADIUS_KM ** 2;
 
+// Por si shared/world.json todavía trae regiones históricas (versiones antiguas las guardaban ahí).
 const worldUrl = new URL('../shared/world.json', import.meta.url);
 const world = JSON.parse(readFileSync(worldUrl, 'utf8'));
-world.countries = world.countries.filter((c) => !isAncient(c.id));
+if (world.countries.some((c) => isAncient(c.id))) {
+  world.countries = world.countries.filter((c) => !isAncient(c.id));
+  writeFileSync(worldUrl, JSON.stringify(world));
+}
+mkdirSync(new URL('../shared/maps/', import.meta.url), { recursive: true });
 for (const era of Object.keys(HISTORIC_MAPS)) {
   const out = buildEra(era);
-  for (const c of out) {
-    delete c.coastPoints;
-    world.countries.push({ ...c, neighbors: [...c.neighbors].sort(), sea: [...c.sea].sort() });
-  }
+  const countries = out.map(({ coastPoints, ...c }) => ({ ...c, neighbors: [...c.neighbors].sort(), sea: [...c.sea].sort() }));
+  writeFileSync(new URL(`../shared/maps/${era}.json`, import.meta.url), JSON.stringify({ countries }));
   const kb = out.reduce((s, c) => s + c.d.length + c.ds.length, 0) / 1024;
   console.log(`${era}: ${out.length} regiones (${kb.toFixed(0)} KB de contornos)`);
   for (const c of out) console.log(`  ${c.id} ${c.name.padEnd(18)} ${String(c.area).padStart(8)} km²  ${c.coastal ? 'costa' : '     '}  ${c.neighbors.size} vecinos  ${[...c.sea].join(' ')}`);
 }
-writeFileSync(worldUrl, JSON.stringify(world));

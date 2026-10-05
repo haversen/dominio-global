@@ -29,10 +29,14 @@ import { needOf, hasAccess, missingText } from '../shared/strategic.js';
 import { runSpyMission } from './espionage.js';
 import { createWorld, tickWorld, worldEffects, isSanctioned, nukesBanned, addNews, voteUN } from './world.js';
 import { assignMissions, checkMissions, missionProgress } from './missions.js';
+import { HISTORIC_MAPS } from '../shared/ancient.js';
 import { SPACE_STAGES, MISSIONS, FIRST_EVENT_MS, UN_FIRST_MS } from '../shared/world.js';
 
-// Mapa del mundo generado por scripts/build-world.js.
-export const WORLD = JSON.parse(readFileSync(new URL('../shared/world.json', import.meta.url), 'utf8'));
+// Mapa del mundo generado por scripts/build-world.js, más las regiones de los mapas históricos
+// (scripts/build-historic.js), que van en archivos aparte para que el navegador solo baje el que se juega.
+const readJson = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
+export const WORLD = readJson('../shared/world.json');
+for (const era of Object.keys(HISTORIC_MAPS)) WORLD.countries.push(...readJson(`../shared/maps/${era}.json`).countries);
 export const COUNTRIES = new Map(WORLD.countries.map((c) => [c.id, c]));
 // Mapas con países recortados (la Rusia europea en el mapa de Europa): mismo país, otro contorno y otro centro.
 const VARIANT_COUNTRIES = Object.fromEntries(Object.entries(WORLD.variants ?? {}).map(([name, list]) => {

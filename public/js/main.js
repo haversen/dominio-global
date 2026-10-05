@@ -3,7 +3,8 @@ import { socket, request, getSession, setSession } from './net.js';
 import { $, h, toast, copyText, avatarEl } from './dom.js';
 import { AVATARS, DEFAULT_AVATAR, PRESIDENTS, PRESIDENT_IDS } from '/shared/leaders.js';
 import { ACHIEVEMENTS, ACHIEVEMENT_IDS } from '/shared/achievements.js';
-import { scenarioOf, inScenario } from '/shared/scenarios.js';
+import { scenarioOf, inScenario, eraOf } from '/shared/scenarios.js';
+import { eraOfRegion } from '/shared/ancient.js';
 import { hasTeams, teamCount, teamCapacity, teamName, TEAM_ICONS } from '/shared/teams.js';
 import { GameView, loadWorld } from './game-ui.js';
 import { play, isMuted, setMuted } from './sound.js';
@@ -347,8 +348,21 @@ function renderMenu() {
   list.replaceChildren(...state.games.map(gameCard));
 }
 
+// Nombre de un país o región. Las regiones de los mapas históricos se bajan la primera vez que hacen falta.
+const loadingEras = new Set();
+function countryName(id) {
+  if (!id || !worldData) return null;
+  const name = worldData.byId.get(id)?.name;
+  const era = eraOfRegion(id);
+  if (!name && era && !loadingEras.has(era)) {
+    loadingEras.add(era);
+    loadWorld(era).then(() => render()).catch(() => loadingEras.delete(era));
+  }
+  return name ?? null;
+}
+
 function gameCard(g, guest = false) {
-  const country = g.you.country && worldData?.byId.get(g.you.country)?.name;
+  const country = countryName(g.you.country);
   let status = STATE_LABEL[g.state] ?? g.state;
   if (g.state === 'playing' && g.phase === 'picking') status = '🗺 Eligiendo países';
   if (g.you.eliminated) status = '☠ Eliminado';
@@ -551,11 +565,13 @@ countrySelect.addEventListener('change', async () => {
 
 function renderCountryPick(me) {
   const world = worldData;
-  if (!world) {
-    loadWorld().then((w) => { worldData = w; if (state.room?.state === 'lobby') renderLobby(); }).catch(() => {});
+  const scenarioId = state.room.settings.mapScenario;
+  // En un mapa histórico, sus regiones se bajan la primera vez que se elige (shared/maps/<era>.json).
+  const era = eraOf(scenarioId);
+  if (!world || (era && !world.eras.has(era))) {
+    loadWorld(era).then((w) => { worldData = w; if (state.room?.state === 'lobby') renderLobby(); }).catch(() => {});
     return;
   }
-  const scenarioId = state.room.settings.mapScenario;
   const scenario = scenarioOf(scenarioId);
   const featured = new Set(scenario.featured ?? []);
   const others = state.room.players.filter((p) => p.id !== me.id && p.country);
@@ -638,7 +654,7 @@ function playerItem(p, viewerIsHost) {
     : null;
 
   const pres = PRESIDENTS[p.president];
-  const country = p.country && worldData?.byId.get(p.country)?.name;
+  const country = countryName(p.country);
   return h('li', { class: `player${p.connected ? '' : ' offline'}${isMe ? ' me' : ''}` },
     h('span', { class: 'swatch', style: { background: p.color } }),
     h('span', { class: 'player-avatar' }, p.avatar ?? DEFAULT_AVATAR),

@@ -226,3 +226,7 @@ export const historicIds = (era) => HISTORIC_MAPS[era].regions.map((r) => r.id);
 export const isAncient = (id) => typeof id === 'string' && /^[A-Z]_/.test(id);
 /** Mapas históricos que sustituyen a un país actual (Grecia y Turquía están en la antigua Grecia y en Roma). */
 export const replacedBy = (id) => Object.keys(HISTORIC_MAPS).filter((era) => HISTORIC_MAPS[era].replaced.includes(id));
+/** Mapa histórico de una región por su prefijo (R_ROM → 'rome'), o null si es un país actual. */
+export const eraOfRegion = (id) => (isAncient(id)
+  ? Object.keys(HISTORIC_MAPS).find((era) => id.startsWith(HISTORIC_MAPS[era].prefix)) ?? null
+  : null);

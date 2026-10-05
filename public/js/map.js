@@ -202,7 +202,16 @@ export class WorldMap {
     this.setLowGraphics(this.lowGfx);
     this.#bindMap();
     this.#bindMinimap();
-    new ResizeObserver(() => this.#resize()).observe(svgEl);
+    this.resizeObserver = new ResizeObserver(() => this.#resize());
+    this.resizeObserver.observe(svgEl);
+  }
+
+  /** Deja de animar y de observar (antes de dibujar otro mapa en su lugar). */
+  destroy() {
+    this.resizeObserver.disconnect();
+    for (const f of [this.armyLoop, this.frame, this.previewFrame]) if (f) cancelAnimationFrame(f);
+    this.animation = null; // detiene un viaje de cámara a medias
+    this.destroyed = true;
   }
 
   // ---------- Construcción ----------
@@ -484,7 +493,7 @@ export class WorldMap {
       };
     };
     const step = () => {
-      if (!this.armies.length) {
+      if (this.destroyed || !this.armies.length) {
         this.armyLoop = null;
         return;
       }

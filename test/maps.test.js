@@ -220,3 +220,16 @@ test('mapa de Europa: Rusia es solo su parte europea (hasta los Urales)', async 
   assert.ok(distanceKm(europe, ukr) < 1500, `${distanceKm(europe, ukr)} km`);
   assert.ok(distanceKm(world, ukr) > 3000);
 });
+
+test('los mapas históricos van en archivos aparte: el navegador solo baja el que se juega', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { HISTORIC_MAPS } = await import('../shared/ancient.js');
+  const base = JSON.parse(readFileSync(new URL('../shared/world.json', import.meta.url), 'utf8'));
+  assert.ok(base.countries.every((c) => !c.era), 'shared/world.json solo trae los países actuales');
+  for (const era of Object.keys(HISTORIC_MAPS)) {
+    const { countries } = JSON.parse(readFileSync(new URL(`../shared/maps/${era}.json`, import.meta.url), 'utf8'));
+    assert.deepEqual(countries.map((c) => c.id).sort(), HISTORIC_MAPS[era].regions.map((r) => r.id).sort(), era);
+    // El servidor las carga todas.
+    for (const c of countries) assert.equal(COUNTRIES.get(c.id)?.era, era);
+  }
+});

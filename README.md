@@ -93,6 +93,8 @@ npm run build:map
 
 Cada país incluye su contorno ya proyectado, nombre en español, superficie, centroide y vecinos (fronteras terrestres + rutas marítimas para que las islas sean alcanzables). El script comprueba que todo el mundo forme un único grafo conectado.
 
+Las regiones de los mapas históricos (antigua Grecia, Japón samurái, Imperio romano) van aparte, en `shared/maps/<mapa>.json` (`scripts/build-historic.js`). El servidor las carga todas; el navegador solo baja `world.json` (81 KB comprimido) y, si la partida es en un mapa histórico, el de ese mapa (13-26 KB) la primera vez que hace falta. Si en la misma pestaña se pasa a una partida de otro mapa histórico, el mapa se vuelve a dibujar.
+
 ## Tiempo real
 
 No hay turnos: cada jugador actúa desde su dispositivo cuando quiere y el servidor aplica todo al momento sobre el mapa común. El servidor avanza las partidas 4 veces por segundo. La velocidad de la economía y la investigación se ajusta en el lobby (muy lenta, lenta, normal, rápida). La partida sigue aunque no quede nadie conectado.
@@ -352,8 +354,10 @@ shared/
   score.js    Puntuación y textos de victoria
   wire.js     Formato compacto de los países para la red
   world.json  Mapa mundial generado (países, contornos, vecinos)
+  maps/       Regiones de cada mapa histórico (greece.json, sengoku.json, rome.json)
 scripts/
   build-world.js  Genera shared/world.json
+  build-historic.js  Genera shared/maps/*.json (mapas históricos)
   load-test.js    Prueba de carga con bots
 public/
   index.html  Pantallas: menú, lobby y partida

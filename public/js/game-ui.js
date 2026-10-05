@@ -67,19 +67,41 @@ const secondsText = (ms) => {
 const playable = (game, id) => inScenario(game.scenario, id);
 const playableNeighbors = (game, c) => c.neighbors.filter((id) => playable(game, id));
 
-export function loadWorld() {
-  worldPromise ??= fetch('/shared/world.json')
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    })
-    .then((data) => {
-      world = data;
-      world.byId = new Map(data.countries.map((c) => [c.id, c]));
-      setWorldNames(world);
-      return world;
+const fetchJson = (url) => fetch(url).then((res) => {
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+});
+const eraPromises = new Map();
+
+/**
+ * Carga el mapa del mundo y, si se pide, las regiones de un mapa histórico (shared/maps/<era>.json).
+ * Cada mapa histórico se baja solo la primera vez que hace falta y se añade al mismo objeto `world`,
+ * que sigue siendo el mismo para toda la página.
+ */
+export function loadWorld(era = null) {
+  worldPromise ??= fetchJson('/shared/world.json').then((data) => {
+    world = data;
+    world.byId = new Map(data.countries.map((c) => [c.id, c]));
+    world.eras = new Set();
+    setWorldNames(world);
+    return world;
+  });
+  if (!era) return worldPromise;
+  if (!eraPromises.has(era)) {
+    const p = Promise.all([worldPromise, fetchJson(`/shared/maps/${era}.json`)]).then(([w, data]) => {
+      for (const c of data.countries) {
+        if (w.byId.has(c.id)) continue;
+        w.countries.push(c);
+        w.byId.set(c.id, c);
+      }
+      w.eras.add(era);
+      setWorldNames(w);
+      return w;
     });
-  return worldPromise;
+    p.catch(() => eraPromises.delete(era)); // si falla la red, se reintenta la próxima vez
+    eraPromises.set(era, p);
+  }
+  return eraPromises.get(era);
 }
 
 export class GameView {
@@ -157,10 +179,18 @@ export class GameView {
 
   async show() {
     try {
-      await loadWorld();
+      await loadWorld(eraOf(this.getState().room?.game?.scenario));
     } catch {
       toast('No se pudo cargar el mapa. Recarga la página.', 'error');
       return;
+    }
+    // Si se ha bajado otro mapa histórico desde que se dibujó el mapa, se vuelve a dibujar con él.
+    if (this.map && this.map.byId.size !== world.countries.length) {
+      this.map.destroy();
+      for (const id of ['#map', '#minimap']) { const el = $(id); el.replaceWith(el.cloneNode(false)); }
+      this.map = null;
+      this.lastRoom = null;
+      this.scopeKey = null;
     }
     if (!this.map) {
       this.map = new WorldMap({
@@ -199,6 +229,15 @@ export class GameView {
     const ctx = this.#ctx();
     if (!ctx || !this.map) return;
     const { room, game, me } = ctx;
+    // Partida en un mapa histórico que todavía no está dibujado: se baja y se redibuja (show() vuelve aquí).
+    const era = eraOf(game.scenario);
+    if ((era && !world.eras.has(era)) || this.map.byId.size !== world.countries.length) {
+      if (!this.loadingMap) {
+        this.loadingMap = true;
+        this.show().finally(() => { this.loadingMap = false; });
+      }
+      return;
+    }
     // Solo cuando llega un estado público nuevo: reloj, mapa, jugadores y batallas.
     if (room !== this.lastRoom) {
       this.lastRoom = room;
