@@ -565,8 +565,6 @@ export class GameView {
         h('dt', {}, 'Superficie'), h('dd', {}, `${fmt.format(scenarioArea(game.scenario, c))} km²`),
         h('dt', {}, 'Terreno'), h('dd', { title: `Defensa ×${terrain.defense}` }, `${terrain.label}${c.coastal ? ' · costa' : ''}`),
         h('dt', {}, 'Desarrollo'), h('dd', {}, this.#levelPips(state.level)),
-        state.developing && h('dt', {}, 'En obras'),
-        state.developing && h('dd', {}, `nivel ${state.developing.toLevel} en ${secondsText(state.developing.readyAt - now)}`),
         state.contaminatedUntil > now && h('dt', { class: 'danger-text' }, '☢ Contaminado'),
         state.contaminatedUntil > now && h('dd', { class: 'danger-text' }, `sin producción ${secondsText(state.contaminatedUntil - now)}`)),
       strategicOf(c.id).length > 0 && h('p', { class: 'strategic-line' }, 'Recursos estratégicos: ',
@@ -585,7 +583,7 @@ export class GameView {
       (homeOf || usedSlots(state.buildings) > 0) && h('p', { class: 'muted small' },
         [homeOf && 'Incluye la bonificación de capital.', usedSlots(state.buildings) > 0 && 'Incluye lo que producen sus edificios.']
           .filter(Boolean).join(' ')),
-      isMine && this.#developAction(c, state, ctx),
+      isMine && this.#developAction(c, state, ctx, now),
       game.phase === 'active' && this.#buildingsSection(c, state, ctx, isMine, now),
       picking && this.#pickAction(c, ctx),
       h('h4', { class: 'panel-sub' }, 'Países vecinos'),
@@ -652,7 +650,8 @@ export class GameView {
       h('span', { class: 'unit-icon' }, UNITS[t].icon),
       h('span', { class: 'unit-name' }, UNITS[t].label),
       h('b', {}, String(state.units[t])),
-      training[t] && h('em', { title: 'En entrenamiento' }, `+${training[t].count} · ${secondsText(training[t].next - now)}`)))));
+      // La línea de entrenamiento siempre ocupa su sitio: si apareciera y desapareciera, todo el panel daría saltos.
+      h('em', { title: training[t] ? 'En entrenamiento' : '' }, training[t] ? `+${training[t].count} · ${secondsText(training[t].next - now)}` : '\u00a0')))));
   }
 
   #movesSection(c, { game, players, me }, now) {
@@ -1120,9 +1119,14 @@ export class GameView {
       })));
   }
 
-  #developAction(c, state, { self }) {
+  #developAction(c, state, { self }, now) {
     if (state.level >= MAX_LEVEL) return h('p', { class: 'muted small' }, 'Desarrollo al nivel máximo.');
-    if (state.developing) return null;
+    // Durante las obras el bloque sigue en su sitio (si desapareciera, el panel daría un salto).
+    if (state.developing) {
+      return h('div', { class: 'develop' },
+        h('button', { class: 'btn btn-block', disabled: true }, `🏗️ En obras: nivel ${state.developing.toLevel}`),
+        h('p', { class: 'muted small' }, `Listo en ${secondsText(state.developing.readyAt - now)}. Al terminar: +25 % de producción y +5 % de defensa.`));
+    }
 
     const cost = discountCost(developCost(state.level), leaderBonus(self?.president).cost);
     const reason = !self || !canAfford(self.resources, cost) ? 'No tienes recursos suficientes.' : null;
@@ -1130,6 +1134,7 @@ export class GameView {
       h('button', {
         class: 'btn btn-block',
         disabled: Boolean(reason),
+        title: reason ?? '',
         onClick: async (e) => {
           e.currentTarget.disabled = true;
           const res = await request('game:develop', { countryId: c.id });
@@ -1140,7 +1145,8 @@ export class GameView {
           }
         },
       }, `Desarrollar a nivel ${state.level + 1}`),
-      h('p', { class: 'muted small' }, reason ?? `Coste: ${costText(cost)}. +25 % de producción y +5 % de defensa.`));
+      // El texto no cambia al poder o no pagarlo: si cambiara de largo, el panel daría saltos al subir y bajar los recursos.
+      h('p', { class: 'muted small' }, `Coste: ${costText(cost)}. +25 % de producción y +5 % de defensa.`));
   }
 
   #pickAction(c, { game, me }) {

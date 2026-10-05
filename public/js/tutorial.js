@@ -1,6 +1,8 @@
 // Tutorial de la primera partida: una ficha con pasos que señala cada parte de la pantalla.
 
 import { $, h } from './dom.js';
+import { BUILDINGS } from '/shared/buildings.js';
+import { currentEra, spaceAllowed } from '/shared/eras.js';
 
 const DONE_KEY = 'dg.tutorialDone';
 
@@ -22,12 +24,15 @@ const STEPS = [
   },
   {
     title: '🏗️ Construye tu economía',
-    text: 'En «Construcciones» levanta fábricas, granjas, bancos o búnkeres. Desarrollar el país te da más espacio para construir.',
+    // Los nombres de los edificios cambian con la época del mapa (forja, olivar, murallas...).
+    text: () => `En «Construcciones» levanta ${['factory', 'farm', 'bank', 'bunker'].map((t) => BUILDINGS[t].label.toLowerCase()).join(', ').replace(/, ([^,]*)$/, ' o $1')}. Desarrollar el país te da más espacio para construir.`,
     target: '.build-grid',
   },
   {
     title: '🔬 Investiga',
-    text: 'Abre ☰ Menú → 🔬 Tecnología. Cada rama del árbol investiga a la vez: tropas nuevas, bombas y la carrera espacial.',
+    text: () => (spaceAllowed(currentEra())
+      ? 'Abre ☰ Menú → 🔬 Tecnología. Cada rama del árbol investiga a la vez: tropas nuevas, bombas y la carrera espacial.'
+      : 'Abre ☰ Menú → 🔬 Tecnología. Cada rama del árbol investiga a la vez: tropas nuevas, armas de asedio y mejoras de la época.'),
     target: '#btn-game-menu',
   },
   {
@@ -59,7 +64,7 @@ function show() {
     h('div', { class: 'tutorial-head' },
       h('strong', {}, s.title),
       h('small', { class: 'muted' }, `${step + 1} / ${STEPS.length}`)),
-    h('p', {}, s.text),
+    h('p', {}, typeof s.text === 'function' ? s.text() : s.text),
     h('div', { class: 'tutorial-actions' },
       !last && h('button', { class: 'btn btn-ghost btn-xs', onClick: finish }, 'Saltar'),
       h('button', { class: 'btn btn-primary btn-xs', onClick: () => { step += 1; show(); } }, last ? '¡A jugar!' : 'Siguiente →')));
