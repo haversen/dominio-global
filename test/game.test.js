@@ -654,9 +654,13 @@ test('informe de batalla: explica la fuerza de cada bando y solo lo reciben los 
   const game = createGame({ countryAssignment: 'random', mapScenario: 'world' }, ['a', 'b'], { now: 0 });
   game.phase = 'active';
   const home = game.homes.a;
-  const target = COUNTRIES.get(home).neighbors.find((n) => game.countries[n] && !game.countries[n].owner);
+  // Un vecino por tierra (por mar haría falta un barco).
+  const target = COUNTRIES.get(home).neighbors.find((n) => game.countries[n] && !game.countries[n].owner && !COUNTRIES.get(home).sea.includes(n));
+  if (!target) return; // país isla: no hay vecino por tierra
   game.countries[home].units.infantry = 60;
-  assert.equal(moveArmy(game, 'a', home, target, { ...game.countries[home].units }, 0).error, undefined);
+  // Solo infantería: los barcos no pueden entrar en un vecino sin costa.
+  const army = Object.fromEntries(Object.keys(game.countries[home].units).map((t) => [t, t === 'infantry' ? 60 : 0]));
+  assert.equal(moveArmy(game, 'a', home, target, army, 0).error, undefined);
   for (let t = 5_000; t < 4e8 && !game.events.some((e) => e.type === 'battle'); t += 60_000) tickGame(game, ['a', 'b'], t);
   const battle = game.events.find((e) => e.type === 'battle');
   const r = battle.report;
